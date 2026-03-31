@@ -24,23 +24,15 @@ const MAX_JSON_BYTES = 64 * 1024;
 const MAX_SDP_BYTES = 256 * 1024;
 
 const DIFFICULTY_OPTIONS = [
-  { id: "beginner", label: "Beginner", windowStart: 0, windowEnd: 10 },
-  { id: "intermediate", label: "Intermediate", windowStart: 6, windowEnd: 16 },
-  { id: "advanced", label: "Advanced", windowStart: 10, windowEnd: 20 },
-  { id: "pro", label: "Pro", windowStart: 14, windowEnd: sentenceBank.length }
+  { id: "beginner", label: "Beginner" },
+  { id: "intermediate", label: "Intermediate" },
+  { id: "advanced", label: "Advanced" },
+  { id: "pro", label: "Pro" }
 ];
 const DEFAULT_DIFFICULTY_ID = DIFFICULTY_OPTIONS[0].id;
 const DIFFICULTY_OPTIONS_BY_ID = new Map(
   DIFFICULTY_OPTIONS.map((option) => [option.id, option])
 );
-const SENTENCES_BY_DIFFICULTY = [...sentenceBank].sort((left, right) => {
-  const scoreDifference = getSentenceDifficultyScore(left) - getSentenceDifficultyScore(right);
-  if (scoreDifference !== 0) {
-    return scoreDifference;
-  }
-
-  return left.id.localeCompare(right.id);
-});
 
 const JSON_SCHEMA = {
   name: "translation_grade",
@@ -194,23 +186,6 @@ function shuffle(array) {
   return clone;
 }
 
-function countEnglishWords(text) {
-  return String(text || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-}
-
-function getSentenceDifficultyScore(sentence) {
-  const wordScore = countEnglishWords(sentence.english) * 10;
-  const originalLevelScore = String(sentence.level || "").toLowerCase() === "intermediate" ? 6 : 0;
-  const complexityScore = /\b(if|solution|problem|should|have to|need to)\b/i.test(sentence.english)
-    ? 2
-    : 0;
-
-  return wordScore + originalLevelScore + complexityScore;
-}
-
 function normalizeDifficultyId(value) {
   const normalizedValue = String(value || "").trim().toLowerCase();
   return DIFFICULTY_OPTIONS_BY_ID.has(normalizedValue)
@@ -222,27 +197,30 @@ function getDifficultyOption(value) {
   return DIFFICULTY_OPTIONS_BY_ID.get(normalizeDifficultyId(value));
 }
 
+function getSentenceDifficultyId(sentence) {
+  return normalizeDifficultyId(sentence.difficulty || sentence.level);
+}
+
 function getLessonPool(difficultyId) {
   const difficulty = getDifficultyOption(difficultyId);
-  const lastPossibleStart = Math.max(SENTENCES_BY_DIFFICULTY.length - LESSON_SIZE, 0);
-  const start = Math.min(difficulty.windowStart, lastPossibleStart);
-  const end = Math.min(
-    Math.max(difficulty.windowEnd, start + LESSON_SIZE),
-    SENTENCES_BY_DIFFICULTY.length
-  );
+  const pool = sentenceBank.filter((sentence) => getSentenceDifficultyId(sentence) === difficulty.id);
 
-  return SENTENCES_BY_DIFFICULTY.slice(start, end);
+  if (pool.length >= LESSON_SIZE) {
+    return pool;
+  }
+
+  return sentenceBank.filter(
+    (sentence) => getSentenceDifficultyId(sentence) === DEFAULT_DIFFICULTY_ID
+  );
 }
 
 function buildLesson(difficultyId = DEFAULT_DIFFICULTY_ID) {
-  const difficulty = getDifficultyOption(difficultyId);
-
-  return shuffle(getLessonPool(difficulty.id))
+  return shuffle(getLessonPool(difficultyId))
     .slice(0, LESSON_SIZE)
     .map((sentence) => ({
       id: sentence.id,
       hindi: sentence.hindi,
-      level: difficulty.label,
+      level: sentence.level,
       category: sentence.category
     }));
 }
