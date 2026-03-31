@@ -23,6 +23,25 @@ const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const MAX_SDP_BYTES = 256 * 1024;
 
+const DIFFICULTY_OPTIONS = [
+  { id: "beginner", label: "Beginner", windowStart: 0, windowEnd: 10 },
+  { id: "intermediate", label: "Intermediate", windowStart: 6, windowEnd: 16 },
+  { id: "advanced", label: "Advanced", windowStart: 10, windowEnd: 20 },
+  { id: "pro", label: "Pro", windowStart: 14, windowEnd: sentenceBank.length }
+];
+const DEFAULT_DIFFICULTY_ID = DIFFICULTY_OPTIONS[0].id;
+const DIFFICULTY_OPTIONS_BY_ID = new Map(
+  DIFFICULTY_OPTIONS.map((option) => [option.id, option])
+);
+const SENTENCES_BY_DIFFICULTY = [...sentenceBank].sort((left, right) => {
+  const scoreDifference = getSentenceDifficultyScore(left) - getSentenceDifficultyScore(right);
+  if (scoreDifference !== 0) {
+    return scoreDifference;
+  }
+
+  return left.id.localeCompare(right.id);
+});
+
 const JSON_SCHEMA = {
   name: "translation_grade",
   strict: true,
@@ -175,13 +194,55 @@ function shuffle(array) {
   return clone;
 }
 
-function buildLesson() {
-  return shuffle(sentenceBank)
+function countEnglishWords(text) {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function getSentenceDifficultyScore(sentence) {
+  const wordScore = countEnglishWords(sentence.english) * 10;
+  const originalLevelScore = String(sentence.level || "").toLowerCase() === "intermediate" ? 6 : 0;
+  const complexityScore = /\b(if|solution|problem|should|have to|need to)\b/i.test(sentence.english)
+    ? 2
+    : 0;
+
+  return wordScore + originalLevelScore + complexityScore;
+}
+
+function normalizeDifficultyId(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return DIFFICULTY_OPTIONS_BY_ID.has(normalizedValue)
+    ? normalizedValue
+    : DEFAULT_DIFFICULTY_ID;
+}
+
+function getDifficultyOption(value) {
+  return DIFFICULTY_OPTIONS_BY_ID.get(normalizeDifficultyId(value));
+}
+
+function getLessonPool(difficultyId) {
+  const difficulty = getDifficultyOption(difficultyId);
+  const lastPossibleStart = Math.max(SENTENCES_BY_DIFFICULTY.length - LESSON_SIZE, 0);
+  const start = Math.min(difficulty.windowStart, lastPossibleStart);
+  const end = Math.min(
+    Math.max(difficulty.windowEnd, start + LESSON_SIZE),
+    SENTENCES_BY_DIFFICULTY.length
+  );
+
+  return SENTENCES_BY_DIFFICULTY.slice(start, end);
+}
+
+function buildLesson(difficultyId = DEFAULT_DIFFICULTY_ID) {
+  const difficulty = getDifficultyOption(difficultyId);
+
+  return shuffle(getLessonPool(difficulty.id))
     .slice(0, LESSON_SIZE)
     .map((sentence) => ({
       id: sentence.id,
       hindi: sentence.hindi,
-      level: sentence.level,
+      level: difficulty.label,
       category: sentence.category
     }));
 }
@@ -194,7 +255,7 @@ function requireApiKey() {
   if (!OPENAI_API_KEY) {
     throw createHttpError(
       500,
-      "OPENAI_API_KEY is missing. Add it to .env before using the AI features."
+      "OPENAI_API_KEY is missing. Set it in your server environment variables (.env locally, Railway Variables in production)."
     );
   }
 }
@@ -397,9 +458,15 @@ async function gradeAttempt(sentence, transcript) {
   return JSON.parse(message.content);
 }
 
-async function handleLessonRequest(response) {
+async function handleLessonRequest(requestUrl, response) {
+  const difficulty = getDifficultyOption(requestUrl.searchParams.get("difficulty"));
+
   sendJson(response, 200, {
-    lesson: buildLesson(),
+    lesson: buildLesson(difficulty.id),
+    difficulty: {
+      id: difficulty.id,
+      label: difficulty.label
+    },
     hasOpenAiKey: Boolean(OPENAI_API_KEY),
     models: {
       grader: OPENAI_GRADER_MODEL,
@@ -515,7 +582,7 @@ const server = http.createServer(async (request, response) => {
 
   try {
     if (request.method === "GET" && requestUrl.pathname === "/api/lesson") {
-      await handleLessonRequest(response);
+      await handleLessonRequest(requestUrl, response);
       return;
     }
 

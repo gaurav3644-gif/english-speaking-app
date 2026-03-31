@@ -64,7 +64,8 @@ img {
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -76,14 +77,15 @@ textarea {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 1.04fr) minmax(520px, 0.9fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 0.88fr) minmax(560px, 1.04fr);
+  gap: 28px;
   align-items: center;
   margin-bottom: 34px;
 }
 
 .hero-copy {
-  padding: 10px 0;
+  max-width: 44rem;
+  padding: 4px 0;
   animation: rise-in 0.72s ease;
 }
 
@@ -104,25 +106,25 @@ textarea {
 .brand-row {
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 44px;
+  margin-bottom: 30px;
 }
 
 .brand {
-  gap: 14px;
+  gap: 16px;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
   background: linear-gradient(145deg, var(--primary), #8b73ff);
   color: #fff;
   font-family: var(--display-font);
-  font-size: 1.05rem;
+  font-size: 1.3rem;
   font-weight: 800;
-  box-shadow: 0 18px 30px rgba(108, 76, 255, 0.24);
+  box-shadow: 0 22px 34px rgba(108, 76, 255, 0.24);
 }
 
 .brand-text {
@@ -132,13 +134,13 @@ textarea {
 }
 
 .brand-text strong {
-  font-size: 1.02rem;
+  font-size: 1.18rem;
   font-weight: 800;
 }
 
 .brand-text span {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.98rem;
 }
 
 .hero-nav {
@@ -185,23 +187,23 @@ textarea {
 }
 
 .hero-body h1 {
-  max-width: 12ch;
-  font-size: clamp(3rem, 5vw, 5.6rem);
-  line-height: 0.96;
-  margin-top: 14px;
+  max-width: 10.6ch;
+  font-size: clamp(2.7rem, 4.35vw, 4.95rem);
+  line-height: 0.95;
+  margin-top: 10px;
 }
 
 .hero-text {
-  max-width: 42rem;
-  margin: 22px 0 0;
-  font-size: 1.05rem;
-  line-height: 1.84;
+  max-width: 35rem;
+  margin: 18px 0 0;
+  font-size: 0.98rem;
+  line-height: 1.72;
   color: var(--ink-soft);
 }
 
 .hero-actions {
-  gap: 18px;
-  margin-top: 30px;
+  gap: 16px;
+  margin-top: 24px;
 }
 
 .hero-button {
@@ -217,13 +219,13 @@ textarea {
 
 .hero-stat-grid {
   gap: 14px;
-  margin-top: 34px;
+  margin-top: 26px;
 }
 
 .hero-stat {
   flex: 1 1 0;
-  min-height: 122px;
-  padding: 22px 20px;
+  min-height: 110px;
+  padding: 20px 18px;
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.84);
   border: 1px solid var(--line);
@@ -233,7 +235,7 @@ textarea {
 .hero-stat-value {
   margin: 0;
   font-family: var(--display-font);
-  font-size: 2rem;
+  font-size: 1.78rem;
   font-weight: 800;
 }
 
@@ -632,6 +634,41 @@ textarea {
 
 .card-body-text {
   margin: 14px 0 0;
+}
+
+.difficulty-field {
+  display: block;
+  margin-top: 14px;
+}
+
+.difficulty-field span {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.difficulty-select {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(108, 76, 255, 0.16);
+  background: #fcfbff;
+  color: var(--ink);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.difficulty-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(108, 76, 255, 0.12);
+}
+
+.difficulty-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .typed-label {

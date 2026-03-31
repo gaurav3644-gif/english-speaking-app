@@ -173,8 +173,17 @@
             <article class="workspace-card action-card">
               <div class="workspace-card-head">
                 <p class="card-kicker">Lesson controls</p>
-                <span>Keep the pace moving</span>
+                <span>Pick the challenge level</span>
               </div>
+              <label class="difficulty-field" for="difficultySelect">
+                <span>Difficulty level</span>
+                <select class="difficulty-select" id="difficultySelect">
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                  <option value="pro">Pro</option>
+                </select>
+              </label>
               <div class="control-row">
                 <button class="button secondary" id="skipButton" type="button">Skip</button>
                 <button class="button ghost" id="newLessonButton" type="button">

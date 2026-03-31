@@ -7,6 +7,7 @@ const state = {
   isRecording: false,
   isFinalizingRecording: false,
   hasOpenAiKey: false,
+  selectedDifficulty: "beginner",
   mediaRecorder: null,
   mediaStream: null,
   mediaChunks: [],
@@ -33,6 +34,7 @@ const elements = {
   playButton: document.querySelector("#playButton"),
   skipButton: document.querySelector("#skipButton"),
   newLessonButton: document.querySelector("#newLessonButton"),
+  difficultySelect: document.querySelector("#difficultySelect"),
   recordButton: document.querySelector("#recordButton"),
   typedAnswer: document.querySelector("#typedAnswer"),
   submitTypedButton: document.querySelector("#submitTypedButton"),
@@ -64,6 +66,7 @@ function syncControlState() {
   elements.skipButton.disabled = controlsLocked || !hasSentence;
   elements.submitTypedButton.disabled = controlsLocked || !hasSentence;
   elements.newLessonButton.disabled = controlsLocked;
+  elements.difficultySelect.disabled = controlsLocked;
   elements.typedAnswer.disabled = controlsLocked || !hasSentence;
   elements.recordButton.disabled =
     !hasSentence || state.isFinalizingRecording || (state.isSubmitting && !state.isRecording);
@@ -1122,19 +1125,33 @@ async function loadLesson() {
   state.currentIndex = 0;
   syncControlState();
   setBusyState(true);
-  setStatus("Loading a fresh lesson...", "neutral");
+
+  const requestedDifficultyId = String(
+    elements.difficultySelect?.value || state.selectedDifficulty || "beginner"
+  )
+    .trim()
+    .toLowerCase() || "beginner";
+  const requestedDifficultyLabel =
+    elements.difficultySelect?.selectedOptions?.[0]?.textContent?.trim() || "Beginner";
+  state.selectedDifficulty = requestedDifficultyId;
+  setStatus(`Loading a ${requestedDifficultyLabel.toLowerCase()} lesson...`, "neutral");
 
   try {
-    const payload = await fetchJson("/api/lesson");
+    const payload = await fetchJson(
+      `/api/lesson?difficulty=${encodeURIComponent(requestedDifficultyId)}`
+    );
+    const difficultyLabel = payload.difficulty?.label || requestedDifficultyLabel;
     state.lesson = payload.lesson;
     state.hasOpenAiKey = Boolean(payload.hasOpenAiKey);
-    elements.lessonMeta.textContent = `${payload.lesson.length} prompts | ${payload.models.grader}`;
+    state.selectedDifficulty = payload.difficulty?.id || requestedDifficultyId;
+    elements.difficultySelect.value = state.selectedDifficulty;
+    elements.lessonMeta.textContent = `${payload.lesson.length} ${difficultyLabel} prompts | ${payload.models.grader}`;
     elements.voiceDisclosure.textContent = payload.hasOpenAiKey
       ? "AI Hindi narration is active, browser speech reads feedback aloud, and supported browsers show an instant transcript preview while OpenAI finalizes the graded transcript."
       : "OpenAI key not found. Browser speech fallback will be used for narration, and transcript will appear after you stop recording.";
 
     renderSentence();
-    setStatus("Lesson ready. Listen carefully, then answer in English.", "neutral");
+    setStatus(`${difficultyLabel} lesson ready. Listen carefully, then answer in English.`, "neutral");
     void playCurrentSentence();
   } catch (error) {
     state.lesson = [];
@@ -1174,6 +1191,14 @@ elements.skipButton.addEventListener("click", () => {
   updateCounters();
   setStatus("Sentence skipped. Moving to the next one.", "warning");
   advanceSentence();
+});
+
+elements.difficultySelect.addEventListener("change", () => {
+  if (state.isSubmitting || state.isRecording || state.isFinalizingRecording) {
+    return;
+  }
+
+  void loadLesson();
 });
 
 elements.newLessonButton.addEventListener("click", () => {
