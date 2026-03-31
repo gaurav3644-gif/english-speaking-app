@@ -1,0 +1,19 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="240" rx="36" fill="#FFF2C8"/>
+  <circle cx="76" cy="60" r="22" fill="#7CE0D1"/>
+  <circle cx="256" cy="52" r="18" fill="#FF8F6B"/>
+  <circle cx="264" cy="184" r="28" fill="#88B9FF"/>
+  <path d="M76 92C76 80.9543 84.9543 72 96 72H224C235.046 72 244 80.9543 244 92V168C244 179.046 235.046 188 224 188H96C84.9543 188 76 179.046 76 168V92Z" fill="#FFFDF7" stroke="#1D3342" stroke-width="4"/>
+  <path d="M168 86C181.255 86 192 96.7452 192 110V119C192 132.255 181.255 143 168 143C154.745 143 144 132.255 144 119V110C144 96.7452 154.745 86 168 86Z" fill="#FF8F6B" stroke="#1D3342" stroke-width="4"/>
+  <path d="M132 123C132 142.882 148.118 159 168 159C187.882 159 204 142.882 204 123" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M168 159V176" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M152 176H184" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M101 110L116 104" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M221 110L236 104" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M106 141L120 148" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M216 148L230 141" stroke="#1D3342" stroke-width="4" stroke-linecap="round"/>
+  <path d="M38 142L52 128L64 142L52 156L38 142Z" fill="#FF8F6B"/>
+  <path d="M257 119L269 105L281 119L269 133L257 119Z" fill="#7CE0D1"/>
+  <path d="M244 26L249 37L261 39L252 47L254 59L244 53L234 59L236 47L227 39L239 37L244 26Z" fill="#FFCF58"/>
+  <text x="160" y="216" text-anchor="middle" fill="#1D3342" font-family="Trebuchet MS, sans-serif" font-size="28" font-weight="700">Speak!</text>
+</svg>

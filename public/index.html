@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BolChaal Speak</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero-section">
+        <div class="hero-copy">
+          <div class="brand-row">
+            <a class="brand" href="/">
+              <span class="brand-mark">B</span>
+              <span class="brand-text">
+                <strong>BolChaal Speak</strong>
+                <span>English speaking practice</span>
+              </span>
+            </a>
+            <div class="hero-nav">
+              <span class="hero-nav-pill">Voice and text mode</span>
+              <span class="hero-nav-pill">AI feedback</span>
+            </div>
+          </div>
+
+          <div class="hero-body">
+            <p class="eyebrow">White. Focused. Fast.</p>
+            <h1>Practice English in a calmer interface built for speaking every day.</h1>
+            <p class="hero-text">
+              Hear a Hindi sentence, answer in natural English, and get instant AI
+              feedback without the noisy visuals. The whole screen is rebuilt around a
+              clean white and violet study flow.
+            </p>
+
+            <div class="hero-actions">
+              <a class="button primary hero-button" href="#practiceStudio">Start Practice</a>
+              <p class="hero-note">
+                Designed like a polished mobile learning app, but still wired to your
+                live lesson flow.
+              </p>
+            </div>
+
+            <div class="hero-stat-grid">
+              <article class="hero-stat">
+                <p class="hero-stat-value">10</p>
+                <p class="hero-stat-label">Guided prompts per lesson</p>
+              </article>
+              <article class="hero-stat">
+                <p class="hero-stat-value">2</p>
+                <p class="hero-stat-label">Ways to answer: voice or text</p>
+              </article>
+              <article class="hero-stat">
+                <p class="hero-stat-value">AI</p>
+                <p class="hero-stat-label">Instant verdict and natural correction</p>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-grid" aria-label="App interface preview">
+
+          <article class="preview-card preview-note">
+            <div class="preview-inline-icon">!</div>
+            <div>
+              <p class="preview-note-title">Focused learning flow</p>
+              <p class="preview-note-text">
+                Listen, speak, retry. Clean cards, soft borders, and one violet accent
+                guide the whole interface.
+              </p>
+            </div>
+          </article>
+
+          <article class="preview-card preview-side">
+            <div class="preview-side-top">
+              <div class="avatar-cluster">
+                <span class="avatar-shell">
+                  <img src="/media/leaf-buddy.svg" alt="Leaf mascot portrait" />
+                </span>
+                <span class="avatar-shell">
+                  <img src="/media/volt-buddy.svg" alt="Volt mascot portrait" />
+                </span>
+                <span class="avatar-shell">
+                  <img src="/media/bubble-buddy.svg" alt="Bubble mascot portrait" />
+                </span>
+              </div>
+              <p class="preview-side-caption">Loved by speaking learners</p>
+              <strong>4 million+ members</strong>
+            </div>
+            <div class="preview-side-body">
+              <h2>Learn and grow anytime, anywhere.</h2>
+              <p>
+                Practice with short listening rounds, immediate guidance, and a calmer
+                interface that does not fight for attention.
+              </p>
+              <span class="mini-bar"></span>
+            </div>
+          </article>
+
+          <article class="preview-card preview-orbit">
+            <p class="preview-card-title">Global speaking circle</p>
+            <div class="orbit-shell">
+              <span class="orbit-center">EN</span>
+              <span class="orbit-avatar orbit-one">
+                <img src="/media/bubble-buddy.svg" alt="Orbit avatar one" />
+              </span>
+              <span class="orbit-avatar orbit-two">
+                <img src="/media/leaf-buddy.svg" alt="Orbit avatar two" />
+              </span>
+              <span class="orbit-avatar orbit-three">
+                <img src="/media/volt-buddy.svg" alt="Orbit avatar three" />
+              </span>
+            </div>
+            <p class="preview-note-text">
+              Join learners who practice for a few minutes every day instead of waiting
+              for perfect confidence.
+            </p>
+          </article>
+
+          <article class="preview-card preview-cta">
+            <p class="preview-card-title">Confidence improving</p>
+            <div class="progress-visual">
+              <div class="progress-track">
+                <span style="width: 89%"></span>
+              </div>
+              <strong>89%</strong>
+            </div>
+            <div class="bar-chart">
+              <span style="height: 48%"></span>
+              <span style="height: 72%"></span>
+              <span style="height: 92%"></span>
+              <span style="height: 100%"></span>
+            </div>
+            <p class="preview-note-text">
+              Most users report stronger English communication after consistent daily
+              drills.
+            </p>
+          </article>
+        </div>
+      </header>
+
+      <main class="workspace" id="practiceStudio">
+        <section class="panel studio-panel">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Practice studio</p>
+              <h2>Translate the Hindi line into natural English</h2>
+            </div>
+            <div class="header-meta">
+              <span class="meta-pill" id="progressLabel">Sentence 1 of 10</span>
+              <span class="meta-note" id="lessonMeta">Loading lesson...</span>
+            </div>
+          </div>
+
+          <div class="sentence-focus" id="sentenceCard">
+            <div class="sentence-focus-copy">
+              <p class="sentence-label">Hindi prompt</p>
+              <p class="sentence-text" id="hindiSentence">Loading...</p>
+              <p class="sentence-subtext" id="sentenceTag">Beginner</p>
+            </div>
+            <button class="button subtle play-button" id="playButton" type="button">
+              Hear Hindi
+            </button>
+          </div>
+
+          <div class="studio-grid">
+            <article class="workspace-card action-card">
+              <div class="workspace-card-head">
+                <p class="card-kicker">Lesson controls</p>
+                <span>Keep the pace moving</span>
+              </div>
+              <div class="control-row">
+                <button class="button secondary" id="skipButton" type="button">Skip</button>
+                <button class="button ghost" id="newLessonButton" type="button">
+                  New Lesson
+                </button>
+              </div>
+            </article>
+
+            <article class="workspace-card voice-card">
+              <div class="workspace-card-head">
+                <p class="card-kicker">Voice answer</p>
+                <span>Use your microphone for live speaking practice</span>
+              </div>
+              <p class="card-body-text">
+                Press record, speak once in English, and stop when you are done.
+              </p>
+              <button class="button primary record-button" id="recordButton" type="button">
+                Start Recording
+              </button>
+            </article>
+
+            <article class="workspace-card typed-card">
+              <div class="workspace-card-head">
+                <p class="card-kicker">Typed fallback</p>
+                <span>Useful if microphone access is blocked</span>
+              </div>
+              <label class="typed-label" for="typedAnswer">Type your English version</label>
+              <textarea
+                id="typedAnswer"
+                class="typed-answer"
+                rows="4"
+                placeholder="Type the English translation here"
+              ></textarea>
+              <button class="button secondary" id="submitTypedButton" type="button">
+                Submit Answer
+              </button>
+            </article>
+          </div>
+        </section>
+
+        <aside class="panel coach-panel">
+          <div class="score-grid">
+            <article class="score-card">
+              <p class="score-label">Correct</p>
+              <p class="score-value" id="correctCount">0</p>
+            </article>
+            <article class="score-card">
+              <p class="score-label">Completed</p>
+              <p class="score-value" id="completedCount">0</p>
+            </article>
+            <article class="score-card highlight">
+              <p class="score-label">Verdict</p>
+              <p class="score-value score-verdict" id="verdictValue">Waiting</p>
+            </article>
+          </div>
+
+          <div class="status-box" id="statusBox">
+            <p class="status-label">Status</p>
+            <p class="status-text" id="statusText">Loading your first practice sentence...</p>
+          </div>
+
+          <article class="workspace-card result-card">
+            <div class="workspace-card-head">
+              <p class="card-kicker">Transcript</p>
+              <span>What the app heard</span>
+            </div>
+            <p class="result-text" id="transcriptText">
+              Your spoken or typed English will appear here.
+            </p>
+          </article>
+
+          <article class="workspace-card result-card">
+            <div class="workspace-card-head">
+              <p class="card-kicker">AI feedback</p>
+              <span>Coach response</span>
+            </div>
+            <p class="result-text" id="feedbackText">
+              The coach will tell you if the meaning is correct.
+            </p>
+          </article>
+
+          <article class="workspace-card result-card ideal-card">
+            <div class="workspace-card-head">
+              <p class="card-kicker">Natural English version</p>
+              <span>Reference answer</span>
+            </div>
+            <p class="result-text" id="idealAnswerText">
+              A model answer will appear after you submit your attempt.
+            </p>
+          </article>
+
+          <p class="footnote" id="voiceDisclosure">
+            AI-generated voice is used for the Hindi narration when the OpenAI key is configured.
+          </p>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
+
+

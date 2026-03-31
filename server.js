@@ -1,0 +1,561 @@
+const fs = require("node:fs");
+const path = require("node:path");
+const http = require("node:http");
+
+const sentenceBank = require("./data/sentences");
+
+loadEnvironment();
+
+const PORT = Number.parseInt(process.env.PORT || "3000", 10);
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+const OPENAI_GRADER_MODEL = process.env.OPENAI_GRADER_MODEL || "gpt-4o-mini";
+const OPENAI_TRANSCRIBE_MODEL =
+  process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe";
+const OPENAI_REALTIME_TRANSCRIBE_MODEL =
+  process.env.OPENAI_REALTIME_TRANSCRIBE_MODEL || OPENAI_TRANSCRIBE_MODEL;
+const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
+const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || "shimmer";
+
+const PUBLIC_DIR = path.join(__dirname, "public");
+const LESSON_SIZE = 10;
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const MAX_JSON_BYTES = 64 * 1024;
+const MAX_SDP_BYTES = 256 * 1024;
+
+const JSON_SCHEMA = {
+  name: "translation_grade",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      passed: { type: "boolean" },
+      verdict: {
+        type: "string",
+        enum: ["correct", "close", "incorrect"]
+      },
+      feedback: { type: "string" },
+      idealAnswer: { type: "string" },
+      score: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100
+      }
+    },
+    required: ["passed", "verdict", "feedback", "idealAnswer", "score"],
+    additionalProperties: false
+  }
+};
+
+const CONTENT_TYPES = new Map([
+  [".html", "text/html; charset=utf-8"],
+  [".css", "text/css; charset=utf-8"],
+  [".js", "application/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".svg", "image/svg+xml"],
+  [".ico", "image/x-icon"]
+]);
+
+function loadEnvironment() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+
+  const envContent = fs.readFileSync(envPath, "utf8");
+
+  for (const rawLine of envContent.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    let value = line.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function sendJson(response, statusCode, payload) {
+  const body = JSON.stringify(payload);
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body)
+  });
+  response.end(body);
+}
+
+function sendText(response, statusCode, body, contentType = "text/plain; charset=utf-8") {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType,
+    "Content-Length": Buffer.byteLength(body)
+  });
+  response.end(body);
+}
+
+function readRequestBody(request, limitBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let totalBytes = 0;
+
+    request.on("data", (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > limitBytes) {
+        request.destroy();
+        reject(createHttpError(413, "Request body is too large."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    request.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    request.on("error", (error) => {
+      reject(error);
+    });
+  });
+}
+
+function getMimeType(request) {
+  return String(request.headers["content-type"] || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+function getAudioExtension(mimeType) {
+  const audioExtensions = {
+    "audio/webm": "webm",
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/x-wav": "wav",
+    "audio/mp4": "mp4",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+    "audio/mpga": "mpga",
+    "audio/m4a": "m4a",
+    "application/octet-stream": "webm"
+  };
+
+  return audioExtensions[mimeType] || "webm";
+}
+
+function shuffle(array) {
+  const clone = [...array];
+  for (let index = clone.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [clone[index], clone[randomIndex]] = [clone[randomIndex], clone[index]];
+  }
+  return clone;
+}
+
+function buildLesson() {
+  return shuffle(sentenceBank)
+    .slice(0, LESSON_SIZE)
+    .map((sentence) => ({
+      id: sentence.id,
+      hindi: sentence.hindi,
+      level: sentence.level,
+      category: sentence.category
+    }));
+}
+
+function findSentence(sentenceId) {
+  return sentenceBank.find((sentence) => sentence.id === sentenceId);
+}
+
+function requireApiKey() {
+  if (!OPENAI_API_KEY) {
+    throw createHttpError(
+      500,
+      "OPENAI_API_KEY is missing. Add it to .env before using the AI features."
+    );
+  }
+}
+
+function apiUrl(endpoint) {
+  return `${OPENAI_BASE_URL}${endpoint}`;
+}
+
+function normalizeOpenAiError(errorPayload, fallbackMessage) {
+  try {
+    const parsed = JSON.parse(errorPayload);
+    return parsed.error?.message || fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+}
+
+async function callOpenAiJson(endpoint, payload) {
+  requireApiKey();
+
+  const response = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiError(responseText, "OpenAI request failed.")
+    );
+  }
+
+  return JSON.parse(responseText);
+}
+
+async function synthesizeHindiSpeech(sentence) {
+  requireApiKey();
+
+  const response = await fetch(apiUrl("/audio/speech"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: OPENAI_TTS_MODEL,
+      voice: OPENAI_TTS_VOICE,
+      input: sentence.hindi,
+      instructions:
+        "Speak in clear Hindi with a warm female teaching voice at a brisk pace so learners can repeat the line easily.",
+      response_format: "mp3"
+    })
+  });
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!response.ok) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiError(audioBuffer.toString("utf8"), "OpenAI speech generation failed.")
+    );
+  }
+
+  return audioBuffer;
+}
+
+async function transcribeLearnerAudio(audioBuffer, mimeType) {
+  requireApiKey();
+
+  const form = new FormData();
+  const extension = getAudioExtension(mimeType);
+  const audioBlob = new Blob([audioBuffer], {
+    type: mimeType || "audio/webm"
+  });
+
+  form.append("file", audioBlob, `attempt.${extension}`);
+  form.append("model", OPENAI_TRANSCRIBE_MODEL);
+  form.append("response_format", "text");
+  form.append(
+    "prompt",
+    "This audio contains a learner speaking an English translation of a Hindi sentence."
+  );
+
+  const response = await fetch(apiUrl("/audio/transcriptions"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`
+    },
+    body: form
+  });
+
+  const transcript = (await response.text()).trim();
+  if (!response.ok) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiError(transcript, "OpenAI transcription failed.")
+    );
+  }
+
+  if (!transcript) {
+    throw createHttpError(422, "No speech was detected. Please try again.");
+  }
+
+  return transcript;
+}
+
+async function createRealtimeTranscriptionToken() {
+  requireApiKey();
+
+  const response = await fetch(apiUrl("/realtime/transcription_sessions"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input_audio_noise_reduction: {
+        type: "near_field"
+      },
+      input_audio_transcription: {
+        model: OPENAI_REALTIME_TRANSCRIBE_MODEL,
+        language: "en",
+        prompt:
+          "The speaker is a Hindi-speaking learner answering in English. Prefer natural English text, and ignore brief Hindi prompt bleed or background Hindi when possible."
+      },
+      turn_detection: {
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 250
+      }
+    })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiError(JSON.stringify(payload || {}), "OpenAI realtime transcription token setup failed.")
+    );
+  }
+
+  const clientSecret = payload?.client_secret?.value;
+  const expiresAt = payload?.client_secret?.expires_at;
+
+  if (!clientSecret) {
+    throw createHttpError(502, "OpenAI did not return a realtime transcription client secret.");
+  }
+
+  return {
+    value: clientSecret,
+    expiresAt,
+    sessionId: payload?.id || null
+  };
+}
+
+async function gradeAttempt(sentence, transcript) {
+  const payload = {
+    model: OPENAI_GRADER_MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are grading spoken English translations for a Hindi-speaking learner. Accept natural paraphrases, contractions, minor filler words, and small speech-to-text errors when the meaning is still correct. Set passed to true only when the learner clearly communicated the right meaning and can move on. Use verdict close when the learner is partly right but should retry. Keep feedback short, warm, and direct. Give one natural idealAnswer in simple English."
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          source_language: "Hindi",
+          target_language: "English",
+          hindi_sentence: sentence.hindi,
+          reference_translation: sentence.english,
+          learner_transcript: transcript,
+          level: sentence.level,
+          category: sentence.category
+        })
+      }
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: JSON_SCHEMA
+    }
+  };
+
+  const result = await callOpenAiJson("/chat/completions", payload);
+  const message = result.choices?.[0]?.message;
+
+  if (message?.refusal) {
+    throw createHttpError(502, "The grading model refused the request.");
+  }
+
+  if (!message?.content) {
+    throw createHttpError(502, "The grading model returned an empty response.");
+  }
+
+  return JSON.parse(message.content);
+}
+
+async function handleLessonRequest(response) {
+  sendJson(response, 200, {
+    lesson: buildLesson(),
+    hasOpenAiKey: Boolean(OPENAI_API_KEY),
+    models: {
+      grader: OPENAI_GRADER_MODEL,
+      transcribe: OPENAI_TRANSCRIBE_MODEL,
+      realtimeTranscribe: OPENAI_REALTIME_TRANSCRIBE_MODEL,
+      tts: OPENAI_TTS_MODEL
+    }
+  });
+}
+
+async function handleTextToSpeechRequest(requestUrl, response) {
+  const sentenceId = requestUrl.searchParams.get("id");
+  const sentence = findSentence(sentenceId);
+
+  if (!sentence) {
+    throw createHttpError(404, "Sentence not found.");
+  }
+
+  const audioBuffer = await synthesizeHindiSpeech(sentence);
+  response.writeHead(200, {
+    "Content-Type": "audio/mpeg",
+    "Content-Length": audioBuffer.length,
+    "Cache-Control": "no-store"
+  });
+  response.end(audioBuffer);
+}
+
+async function handleRealtimeTranscriptionTokenRequest(response) {
+  const token = await createRealtimeTranscriptionToken();
+  sendJson(response, 200, token);
+}
+
+async function handleAttemptRequest(request, requestUrl, response) {
+  const sentenceId = requestUrl.searchParams.get("id");
+  const sentence = findSentence(sentenceId);
+
+  if (!sentence) {
+    throw createHttpError(404, "Sentence not found.");
+  }
+
+  const mimeType = getMimeType(request);
+  let transcript = "";
+
+  if (mimeType === "application/json") {
+    const bodyBuffer = await readRequestBody(request, MAX_JSON_BYTES);
+    const parsedBody = JSON.parse(bodyBuffer.toString("utf8"));
+    transcript = String(parsedBody.attemptText || "").trim();
+
+    if (!transcript) {
+      throw createHttpError(400, "Typed English answer is missing.");
+    }
+  } else {
+    const audioBuffer = await readRequestBody(request, MAX_AUDIO_BYTES);
+    if (!audioBuffer.length) {
+      throw createHttpError(400, "Audio input is missing.");
+    }
+
+    transcript = await transcribeLearnerAudio(audioBuffer, mimeType || "audio/webm");
+  }
+
+  const evaluation = await gradeAttempt(sentence, transcript);
+
+  sendJson(response, 200, {
+    sentenceId,
+    transcript,
+    evaluation
+  });
+}
+
+function getStaticPathname(requestUrl) {
+  if (requestUrl.pathname === "/") {
+    return path.join(PUBLIC_DIR, "index.html");
+  }
+
+  const relativePath = requestUrl.pathname.replace(/^[/\\]+/, "");
+  return path.resolve(PUBLIC_DIR, relativePath);
+}
+
+async function serveStaticFile(requestUrl, response) {
+  const filePath = getStaticPathname(requestUrl);
+
+  if (
+    filePath !== path.join(PUBLIC_DIR, "index.html") &&
+    !filePath.startsWith(`${PUBLIC_DIR}${path.sep}`)
+  ) {
+    throw createHttpError(403, "Forbidden.");
+  }
+
+  let fileStats;
+  try {
+    fileStats = await fs.promises.stat(filePath);
+  } catch {
+    throw createHttpError(404, "File not found.");
+  }
+
+  if (fileStats.isDirectory()) {
+    throw createHttpError(404, "File not found.");
+  }
+
+  const extension = path.extname(filePath).toLowerCase();
+  const contentType = CONTENT_TYPES.get(extension) || "application/octet-stream";
+
+  response.writeHead(200, {
+    "Content-Type": contentType,
+    "Content-Length": fileStats.size
+  });
+
+  fs.createReadStream(filePath).pipe(response);
+}
+
+const server = http.createServer(async (request, response) => {
+  const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+
+  try {
+    if (request.method === "GET" && requestUrl.pathname === "/api/lesson") {
+      await handleLessonRequest(response);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/tts") {
+      await handleTextToSpeechRequest(requestUrl, response);
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/api/realtime-transcription/token"
+    ) {
+      await handleRealtimeTranscriptionTokenRequest(response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/attempt") {
+      await handleAttemptRequest(request, requestUrl, response);
+      return;
+    }
+
+    if (request.method !== "GET") {
+      throw createHttpError(405, "Method not allowed.");
+    }
+
+    await serveStaticFile(requestUrl, response);
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const message = error.message || "Unexpected server error.";
+
+    if (requestUrl.pathname.startsWith("/api/")) {
+      sendJson(response, statusCode, { error: message });
+      return;
+    }
+
+    sendText(response, statusCode, message);
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`English speaking practice app running at http://localhost:${PORT}`);
+});
+
