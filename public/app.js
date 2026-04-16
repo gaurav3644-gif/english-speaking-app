@@ -7,6 +7,7 @@ const state = {
   isRecording: false,
   isFinalizingRecording: false,
   hasOpenAiKey: false,
+  selectedSourceLanguage: "indonesian",
   selectedDifficulty: "beginner",
   mediaRecorder: null,
   mediaStream: null,
@@ -17,23 +18,31 @@ const state = {
   liveFinalizeTimer: null,
   liveHardTimeout: null,
   liveCommitTimer: null,
+  liveCommitInterval: null,
   browserSpeechRecognition: null,
   browserSpeechFinalText: "",
   browserSpeechInterimText: "",
   browserSpeechRestartTimer: null,
   browserSpeechShouldRestart: false,
   audioPlayer: null,
-  autoAdvanceTimer: null
+  narrationCache: new Map(),
+  narrationPreloads: new Map(),
+  autoAdvanceTimer: null,
+  currentIdealAnswer: "",
+  isIdealAnswerVisible: false
 };
 
 const elements = {
   progressLabel: document.querySelector("#progressLabel"),
   lessonMeta: document.querySelector("#lessonMeta"),
-  hindiSentence: document.querySelector("#hindiSentence"),
+  practiceTitle: document.querySelector("#practiceTitle"),
+  sentenceLabel: document.querySelector("#sentenceLabel"),
+  sourceSentence: document.querySelector("#sourceSentence"),
   sentenceTag: document.querySelector("#sentenceTag"),
   playButton: document.querySelector("#playButton"),
   skipButton: document.querySelector("#skipButton"),
   newLessonButton: document.querySelector("#newLessonButton"),
+  sourceLanguageSelect: document.querySelector("#sourceLanguageSelect"),
   difficultySelect: document.querySelector("#difficultySelect"),
   recordButton: document.querySelector("#recordButton"),
   typedAnswer: document.querySelector("#typedAnswer"),
@@ -46,11 +55,152 @@ const elements = {
   transcriptText: document.querySelector("#transcriptText"),
   feedbackText: document.querySelector("#feedbackText"),
   idealAnswerText: document.querySelector("#idealAnswerText"),
+  revealIdealAnswerButton: document.querySelector("#revealIdealAnswerButton"),
   voiceDisclosure: document.querySelector("#voiceDisclosure")
+};
+
+const SOURCE_LANGUAGE_UI = {
+  indonesian: {
+    label: "Indonesian",
+    speechLang: "id-ID",
+    feedbackSpeechRate: 1,
+    voicePrefixes: ["id", "ms", "en-sg", "en-au", "en"],
+    preferredTerms: [
+      "indonesia",
+      "bahasa",
+      "female",
+      "zira",
+      "jenny",
+      "samantha",
+      "nova",
+      "shimmer"
+    ],
+    transcriptPlaceholder: "Bahasa Inggris yang Anda ucapkan atau ketik akan muncul di sini.",
+    feedbackPlaceholder: "Pelatih akan memberi tahu apakah maknanya sudah benar.",
+    idealAnswerPlaceholder: "Contoh jawaban bahasa Inggris akan muncul setelah Anda mengirim jawaban.",
+    waitingVerdict: "Menunggu",
+    doneVerdict: "Selesai",
+    verdictLabels: {
+      correct: "Benar",
+      close: "Hampir",
+      incorrect: "Salah"
+    }
+  },
+  hindi: {
+    label: "Hindi",
+    speechLang: "hi-IN",
+    feedbackSpeechRate: 1,
+    voicePrefixes: ["hi", "en-in", "en"],
+    preferredTerms: [
+      "female",
+      "heera",
+      "swara",
+      "ananya",
+      "neerja",
+      "sara",
+      "zira",
+      "jenny",
+      "nova",
+      "shimmer"
+    ],
+    transcriptPlaceholder: "आपकी बोली या टाइप की गई अंग्रेज़ी यहाँ दिखाई देगी।",
+    feedbackPlaceholder: "कोच बताएगा कि अर्थ सही है या नहीं।",
+    idealAnswerPlaceholder: "आपके उत्तर भेजने के बाद अंग्रेज़ी का एक मॉडल उत्तर यहाँ दिखाई देगा।",
+    waitingVerdict: "प्रतीक्षा",
+    doneVerdict: "पूर्ण",
+    verdictLabels: {
+      correct: "सही",
+      close: "करीब",
+      incorrect: "गलत"
+    }
+  }
 };
 
 function currentSentence() {
   return state.lesson[state.currentIndex] || null;
+}
+
+function getSourceLanguageMeta(sourceLanguageId = state.selectedSourceLanguage) {
+  const normalizedId = String(sourceLanguageId || "").trim().toLowerCase();
+  return SOURCE_LANGUAGE_UI[normalizedId] || SOURCE_LANGUAGE_UI.indonesian;
+}
+
+function getSourceLanguageId(sourceLanguageId = state.selectedSourceLanguage) {
+  return String(sourceLanguageId || "").trim().toLowerCase() || "indonesian";
+}
+
+function updateSourceLanguageUi(sourceLanguageId = state.selectedSourceLanguage) {
+  const normalizedId = getSourceLanguageId(sourceLanguageId);
+  const sourceLanguage = getSourceLanguageMeta(normalizedId);
+
+  if (elements.sourceLanguageSelect) {
+    elements.sourceLanguageSelect.value = normalizedId;
+  }
+
+  if (elements.practiceTitle) {
+    elements.practiceTitle.textContent = `Translate the ${sourceLanguage.label} line into natural English`;
+  }
+
+  if (elements.sentenceLabel) {
+    elements.sentenceLabel.textContent = `${sourceLanguage.label} prompt`;
+  }
+
+  if (elements.playButton) {
+    elements.playButton.textContent = `Hear ${sourceLanguage.label}`;
+  }
+
+  updateFeedbackPlaceholders(normalizedId);
+}
+
+function updateFeedbackPlaceholders(sourceLanguageId = state.selectedSourceLanguage) {
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
+  elements.transcriptText.textContent = sourceLanguage.transcriptPlaceholder;
+  elements.feedbackText.textContent = sourceLanguage.feedbackPlaceholder;
+  renderIdealAnswer(sourceLanguageId);
+}
+
+function renderIdealAnswer(sourceLanguageId = state.selectedSourceLanguage) {
+  const hasIdealAnswer = Boolean(String(state.currentIdealAnswer || "").trim());
+  const shouldShowAnswer = hasIdealAnswer && state.isIdealAnswerVisible;
+  const placeholderText =
+    "Submit your attempt first, then reveal the correct English answer only if you want to see it.";
+
+  elements.idealAnswerText.textContent = shouldShowAnswer
+    ? state.currentIdealAnswer
+    : hasIdealAnswer
+      ? "Correct English answer hidden. Use the button above to reveal it."
+      : placeholderText;
+  elements.idealAnswerText.classList.toggle("is-concealed", hasIdealAnswer && !shouldShowAnswer);
+
+  if (elements.revealIdealAnswerButton) {
+    elements.revealIdealAnswerButton.disabled =
+      !hasIdealAnswer || state.isSubmitting || state.isRecording || state.isFinalizingRecording;
+    elements.revealIdealAnswerButton.textContent = shouldShowAnswer
+      ? "Hide English answer"
+      : "Reveal English answer";
+  }
+}
+
+function setIdealAnswer(idealAnswerText = "", sourceLanguageId = state.selectedSourceLanguage) {
+  state.currentIdealAnswer = String(idealAnswerText || "").trim();
+  state.isIdealAnswerVisible = false;
+  renderIdealAnswer(sourceLanguageId);
+}
+
+function toggleIdealAnswerVisibility() {
+  if (!state.currentIdealAnswer || state.isSubmitting || state.isRecording || state.isFinalizingRecording) {
+    return;
+  }
+
+  state.isIdealAnswerVisible = !state.isIdealAnswerVisible;
+  renderIdealAnswer();
+}
+
+function formatVerdictValue(verdict, score, sourceLanguageId = state.selectedSourceLanguage) {
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
+  const normalizedVerdict = String(verdict || "").trim().toLowerCase();
+  const translatedVerdict = sourceLanguage.verdictLabels?.[normalizedVerdict] || verdict || sourceLanguage.waitingVerdict;
+  return typeof score === "number" ? `${translatedVerdict} - ${score}` : translatedVerdict;
 }
 
 function syncRecordButton() {
@@ -66,8 +216,12 @@ function syncControlState() {
   elements.skipButton.disabled = controlsLocked || !hasSentence;
   elements.submitTypedButton.disabled = controlsLocked || !hasSentence;
   elements.newLessonButton.disabled = controlsLocked;
+  elements.sourceLanguageSelect.disabled = controlsLocked;
   elements.difficultySelect.disabled = controlsLocked;
   elements.typedAnswer.disabled = controlsLocked || !hasSentence;
+  if (elements.revealIdealAnswerButton) {
+    elements.revealIdealAnswerButton.disabled = controlsLocked || !state.currentIdealAnswer;
+  }
   elements.recordButton.disabled =
     !hasSentence || state.isFinalizingRecording || (state.isSubmitting && !state.isRecording);
 
@@ -98,11 +252,12 @@ function updateCounters() {
 }
 
 function resetFeedbackArea() {
-  elements.verdictValue.textContent = "Waiting";
-  elements.transcriptText.textContent = "Your spoken or typed English will appear here.";
-  elements.feedbackText.textContent = "The coach will tell you if the meaning is correct.";
-  elements.idealAnswerText.textContent =
-    "A model answer will appear after you submit your attempt.";
+  const sourceLanguageId = getSourceLanguageId();
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
+  elements.verdictValue.textContent = sourceLanguage.waitingVerdict;
+  state.currentIdealAnswer = "";
+  state.isIdealAnswerVisible = false;
+  updateFeedbackPlaceholders(sourceLanguageId);
 }
 
 function updateProgressLabel() {
@@ -113,29 +268,67 @@ function updateProgressLabel() {
     : "Sentence 0 of 0";
 }
 
+function getSentenceDisplayText(sentence) {
+  if (!sentence) {
+    return "";
+  }
+
+  const sourceLanguageId = getSourceLanguageId(
+    sentence.sourceLanguage || state.selectedSourceLanguage
+  );
+
+  return String(
+    sentence[sourceLanguageId] ||
+      sentence.sourceText ||
+      sentence.hindi ||
+      sentence.indonesian ||
+      ""
+  ).trim();
+}
+
 function renderSentence() {
   const sentence = currentSentence();
   updateProgressLabel();
   updateCounters();
+  updateSourceLanguageUi(sentence?.sourceLanguage || state.selectedSourceLanguage);
 
   if (!sentence) {
-    elements.hindiSentence.textContent = "Lesson complete";
+    elements.sourceSentence.textContent = "Lesson complete";
     elements.sentenceTag.textContent = "Start a new lesson to practice again.";
-    elements.verdictValue.textContent = "Done";
+    elements.verdictValue.textContent = getSourceLanguageMeta().doneVerdict;
     syncControlState();
     setStatus("You finished the lesson. Start a new set for more practice.", "success");
     return;
   }
 
-  elements.hindiSentence.textContent = sentence.hindi;
-  elements.sentenceTag.textContent = `${sentence.level} - ${sentence.category}`;
+  const sourceLanguageId = getSourceLanguageId(
+    sentence.sourceLanguage || state.selectedSourceLanguage
+  );
+  const sourceLanguageLabel =
+    String(sentence.sourceLanguageLabel || "").trim() ||
+    getSourceLanguageMeta(sourceLanguageId).label;
+  elements.sourceSentence.textContent = getSentenceDisplayText(sentence) || "Sentence unavailable";
+  elements.sentenceTag.textContent = `${sourceLanguageLabel} - ${sentence.level} - ${sentence.category}`;
   elements.typedAnswer.value = "";
   resetFeedbackArea();
   syncControlState();
+  primeNarrationAroundCurrentSentence();
 }
 
 async function fetchJson(url, options) {
-  const response = await fetch(url, options);
+  let response;
+
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    const rawMessage = String(error?.message || "").trim().toLowerCase();
+    if (rawMessage.includes("failed to fetch") || rawMessage.includes("fetch failed")) {
+      throw new Error("Could not reach the app server. Refresh the page and try again.");
+    }
+
+    throw error;
+  }
+
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -155,6 +348,105 @@ function stopPlayback() {
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
+}
+
+function getNarrationCacheKey(sentenceId, sourceLanguageId) {
+  const normalizedSentenceId = String(sentenceId || "").trim();
+  const normalizedSourceLanguageId = getSourceLanguageId(sourceLanguageId);
+  return normalizedSentenceId ? `${normalizedSourceLanguageId}:${normalizedSentenceId}` : "";
+}
+
+function clearNarrationCache() {
+  for (const entry of state.narrationCache.values()) {
+    if (entry?.audioUrl) {
+      URL.revokeObjectURL(entry.audioUrl);
+    }
+  }
+
+  state.narrationCache.clear();
+  state.narrationPreloads.clear();
+}
+
+async function preloadNarrationForSentence(sentence) {
+  if (!sentence || !state.hasOpenAiKey) {
+    return null;
+  }
+
+  const sourceLanguageId = getSourceLanguageId(sentence.sourceLanguage);
+  const cacheKey = getNarrationCacheKey(sentence.id, sourceLanguageId);
+  if (!cacheKey) {
+    return null;
+  }
+
+  if (state.narrationCache.has(cacheKey)) {
+    return state.narrationCache.get(cacheKey);
+  }
+
+  if (state.narrationPreloads.has(cacheKey)) {
+    return state.narrationPreloads.get(cacheKey);
+  }
+
+  const preloadPromise = (async () => {
+    const response = await fetch(
+      `/api/tts?id=${encodeURIComponent(sentence.id)}&language=${encodeURIComponent(sourceLanguageId)}`,
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}));
+      throw new Error(errorPayload.error || "Unable to generate narration.");
+    }
+
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const cachedEntry = {
+      audioUrl,
+      sourceLanguageId,
+      sentenceId: sentence.id
+    };
+    state.narrationCache.set(cacheKey, cachedEntry);
+    return cachedEntry;
+  })()
+    .catch((error) => {
+      state.narrationCache.delete(cacheKey);
+      throw error;
+    })
+    .finally(() => {
+      state.narrationPreloads.delete(cacheKey);
+    });
+
+  state.narrationPreloads.set(cacheKey, preloadPromise);
+  return preloadPromise;
+}
+
+function primeNarrationAroundCurrentSentence() {
+  if (!state.hasOpenAiKey) {
+    return;
+  }
+
+  const current = currentSentence();
+  const next = state.lesson[state.currentIndex + 1] || null;
+
+  if (current) {
+    void preloadNarrationForSentence(current).catch(() => {
+      // Ignore warmup failures; explicit play will use fallback messaging.
+    });
+  }
+
+  if (next) {
+    void preloadNarrationForSentence(next).catch(() => {
+      // Ignore warmup failures for future sentences.
+    });
+  }
+}
+
+async function playNarrationEntry(cachedEntry, sourceLanguageLabel) {
+  const audio = new Audio(cachedEntry.audioUrl);
+  state.audioPlayer = audio;
+  audio.addEventListener("ended", () => {
+    setStatus(`Now say the ${sourceLanguageLabel} sentence in English.`, "neutral");
+  });
+  await audio.play();
 }
 
 function findPreferredVoice(languagePrefixes, preferredTerms) {
@@ -183,27 +475,105 @@ function findPreferredVoice(languagePrefixes, preferredTerms) {
   return matchingByLanguage[0] || null;
 }
 
-function speakEnglishFeedback(statusMessage, feedbackMessage) {
-  const combinedText = [statusMessage, feedbackMessage]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join(". ");
+async function playAiFeedbackAudio(feedbackMessage, sourceLanguageId) {
+  if (!state.hasOpenAiKey) {
+    return false;
+  }
 
-  if (!combinedText || !window.speechSynthesis) {
+  let response;
+
+  try {
+    response = await fetch("/api/feedback-tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text: feedbackMessage,
+        language: sourceLanguageId
+      })
+    });
+  } catch {
+    return false;
+  }
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const audioBlob = await response.blob();
+  if (!audioBlob.size) {
+    return false;
+  }
+
+  const audioUrl = URL.createObjectURL(audioBlob);
+  stopPlayback();
+
+  return new Promise((resolve) => {
+    const audio = new Audio(audioUrl);
+    state.audioPlayer = audio;
+    let settled = false;
+
+    function cleanup(didSpeak) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      URL.revokeObjectURL(audioUrl);
+      if (state.audioPlayer === audio) {
+        state.audioPlayer = null;
+      }
+      resolve(didSpeak);
+    }
+
+    audio.addEventListener("ended", () => {
+      cleanup(true);
+    });
+
+    audio.addEventListener("error", () => {
+      cleanup(false);
+    });
+
+    audio
+      .play()
+      .then(() => {
+        // Playback started.
+      })
+      .catch(() => {
+        cleanup(false);
+      });
+  });
+}
+
+async function speakFeedback(feedbackMessage, sourceLanguageId = state.selectedSourceLanguage) {
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
+  const spokenText = String(feedbackMessage || "").trim();
+
+  if (!spokenText) {
     return Promise.resolve(false);
   }
 
   stopPlayback();
 
+  const didPlayAiFeedback = await playAiFeedbackAudio(spokenText, sourceLanguageId);
+  if (didPlayAiFeedback) {
+    return true;
+  }
+
+  if (!window.speechSynthesis) {
+    return false;
+  }
+
   return new Promise((resolve) => {
-    const utterance = new SpeechSynthesisUtterance(combinedText);
+    const utterance = new SpeechSynthesisUtterance(spokenText);
     const preferredVoice = findPreferredVoice(
-      ["en-us", "en-gb", "en-in", "en"],
-      ["female", "zira", "aria", "jenny", "sara", "libby", "samantha", "victoria", "nova", "shimmer"]
+      sourceLanguage.voicePrefixes,
+      sourceLanguage.preferredTerms
     );
 
-    utterance.lang = "en-US";
-    utterance.rate = 1;
+    utterance.lang = sourceLanguage.speechLang;
+    utterance.rate = sourceLanguage.feedbackSpeechRate || 1;
     utterance.pitch = 1;
     utterance.volume = 1;
     if (preferredVoice) {
@@ -223,19 +593,23 @@ function speakEnglishFeedback(statusMessage, feedbackMessage) {
   });
 }
 
-function fallbackSpeakHindi(text) {
+function fallbackSpeakSourceLanguage(text, sourceLanguageId) {
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
   if (!window.speechSynthesis) {
-    setStatus("Hindi audio could not be played. The text is still visible on screen.", "warning");
+    setStatus(
+      `${sourceLanguage.label} audio could not be played. The text is still visible on screen.`,
+      "warning"
+    );
     return;
   }
 
   const utterance = new SpeechSynthesisUtterance(text);
   const preferredVoice = findPreferredVoice(
-    ["hi", "en-in", "en"],
-    ["female", "heera", "swara", "ananya", "neerja", "sara", "zira", "jenny", "nova", "shimmer"]
+    sourceLanguage.voicePrefixes,
+    sourceLanguage.preferredTerms
   );
 
-  utterance.lang = "hi-IN";
+  utterance.lang = sourceLanguage.speechLang;
   utterance.rate = 1.14;
   if (preferredVoice) {
     utterance.voice = preferredVoice;
@@ -243,36 +617,40 @@ function fallbackSpeakHindi(text) {
   }
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
-  setStatus("Playing Hindi sentence with browser voice fallback.", "warning");
+  setStatus(`Playing ${sourceLanguage.label} sentence with browser voice fallback.`, "warning");
 }
 
-async function playCurrentSentence() {
+async function playCurrentSentence(options = {}) {
   const sentence = currentSentence();
   if (!sentence || state.isSubmitting || state.isRecording || state.isFinalizingRecording) {
     return;
   }
 
+  const { preferImmediate = false } = options;
+  const sourceLanguageId = getSourceLanguageId(sentence.sourceLanguage);
+  const sourceLanguage = getSourceLanguageMeta(sourceLanguageId);
+  const fallbackText = getSentenceDisplayText(sentence);
+  const cacheKey = getNarrationCacheKey(sentence.id, sourceLanguageId);
   stopPlayback();
-  setStatus("Playing the Hindi sentence...", "neutral");
+  setStatus(`Playing the ${sourceLanguage.label} sentence...`, "neutral");
 
   try {
-    const response = await fetch(`/api/tts?id=${encodeURIComponent(sentence.id)}`);
-    if (!response.ok) {
-      const errorPayload = await response.json().catch(() => ({}));
-      throw new Error(errorPayload.error || "Unable to generate narration.");
+    if (preferImmediate && !state.narrationCache.has(cacheKey) && window.speechSynthesis) {
+      void preloadNarrationForSentence(sentence).catch(() => {
+        // Ignore warmup errors; fallback speech starts immediately.
+      });
+      fallbackSpeakSourceLanguage(fallbackText, sourceLanguageId);
+      return;
     }
 
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
-    state.audioPlayer = audio;
-    audio.addEventListener("ended", () => {
-      URL.revokeObjectURL(audioUrl);
-      setStatus("Now say the sentence in English.", "neutral");
-    });
-    await audio.play();
+    const cachedEntry = await preloadNarrationForSentence(sentence);
+    if (!cachedEntry) {
+      throw new Error("Narration is unavailable.");
+    }
+
+    await playNarrationEntry(cachedEntry, sourceLanguage.label);
   } catch {
-    fallbackSpeakHindi(sentence.hindi);
+    fallbackSpeakSourceLanguage(fallbackText, sourceLanguageId);
   }
 }
 
@@ -295,6 +673,11 @@ function clearLiveFinalizeTimers() {
   if (state.liveCommitTimer) {
     clearTimeout(state.liveCommitTimer);
     state.liveCommitTimer = null;
+  }
+
+  if (state.liveCommitInterval) {
+    clearInterval(state.liveCommitInterval);
+    state.liveCommitInterval = null;
   }
 
   if (state.liveFinalizeTimer) {
@@ -636,8 +1019,63 @@ function sendLiveEvent(event) {
     return false;
   }
 
-  state.liveConnection.dc.send(JSON.stringify(event));
-  return true;
+  try {
+    state.liveConnection.dc.send(JSON.stringify(event));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function requestLiveBufferCommit(options = {}) {
+  const { allowDuringFinalize = false } = options;
+  const canCommit = state.isRecording || (allowDuringFinalize && state.isFinalizingRecording);
+
+  if (!canCommit) {
+    return false;
+  }
+
+  return sendLiveEvent({ type: "input_audio_buffer.commit" });
+}
+
+function scheduleLiveBufferCommit(delayMs = 0, options = {}) {
+  if (state.liveCommitTimer) {
+    clearTimeout(state.liveCommitTimer);
+  }
+
+  state.liveCommitTimer = window.setTimeout(() => {
+    state.liveCommitTimer = null;
+    const didCommit = requestLiveBufferCommit(options);
+
+    if (!didCommit && typeof options.onFailure === "function") {
+      options.onFailure();
+      return;
+    }
+
+    if (didCommit && typeof options.onSuccess === "function") {
+      options.onSuccess();
+    }
+  }, delayMs);
+}
+
+function stopLiveCommitLoop() {
+  if (state.liveCommitInterval) {
+    clearInterval(state.liveCommitInterval);
+    state.liveCommitInterval = null;
+  }
+}
+
+function startLiveCommitLoop() {
+  stopLiveCommitLoop();
+
+  state.liveCommitInterval = window.setInterval(() => {
+    if (!state.isRecording || state.isFinalizingRecording) {
+      stopLiveCommitLoop();
+      return;
+    }
+
+    requestLiveBufferCommit();
+  }, 1200);
 }
 
 function parseRealtimeErrorMessage(rawPayload, fallbackMessage) {
@@ -682,7 +1120,10 @@ function waitForDataChannelOpen(dataChannel, timeoutMs = 10000) {
 }
 
 async function fetchRealtimeTranscriptionToken() {
-  const payload = await fetchJson("/api/realtime-transcription/token");
+  const sourceLanguageId = getSourceLanguageId();
+  const payload = await fetchJson(
+    `/api/realtime-transcription/token?language=${encodeURIComponent(sourceLanguageId)}`
+  );
 
   if (!payload?.value) {
     throw new Error("Live transcript token was not returned by the server.");
@@ -692,14 +1133,25 @@ async function fetchRealtimeTranscriptionToken() {
 }
 
 async function fetchRealtimeAnswer(offerSdp, ephemeralKey) {
-  const response = await fetch("https://api.openai.com/v1/realtime/calls", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${ephemeralKey}`,
-      "Content-Type": "application/sdp"
-    },
-    body: offerSdp
-  });
+  let response;
+
+  try {
+    response = await fetch("https://api.openai.com/v1/realtime/calls", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ephemeralKey}`,
+        "Content-Type": "application/sdp"
+      },
+      body: offerSdp
+    });
+  } catch (error) {
+    const rawMessage = String(error?.message || "").trim().toLowerCase();
+    if (rawMessage.includes("failed to fetch") || rawMessage.includes("fetch failed")) {
+      throw new Error("Could not reach OpenAI realtime transcription. Falling back to standard recording.");
+    }
+
+    throw error;
+  }
 
   const responseText = await response.text();
   if (!response.ok) {
@@ -760,6 +1212,10 @@ function handleRealtimeTranscriptionEvent(rawMessage) {
 
   if (event.type === "input_audio_buffer.speech_started") {
     upsertLiveTranscriptItem(event.item_id);
+    if (state.liveCommitTimer && !state.isFinalizingRecording) {
+      clearTimeout(state.liveCommitTimer);
+      state.liveCommitTimer = null;
+    }
     setStatus("Speech detected. Keep speaking in English.", "neutral");
     return;
   }
@@ -769,6 +1225,7 @@ function handleRealtimeTranscriptionEvent(rawMessage) {
       queueLiveFinalize(900);
     } else {
       setStatus("Processing the current speech turn...", "neutral");
+      scheduleLiveBufferCommit(140);
     }
     return;
   }
@@ -815,7 +1272,7 @@ function handleRealtimeTranscriptionEvent(rawMessage) {
 
   if (event.type === "error") {
     const message = String(event.error?.message || "Live transcript error.").trim();
-    if (state.isFinalizingRecording && /empty/i.test(message)) {
+    if ((state.isRecording || state.isFinalizingRecording) && /empty/i.test(message)) {
       return;
     }
 
@@ -830,6 +1287,8 @@ async function submitAttempt(options) {
     return;
   }
 
+  const sourceLanguageId = getSourceLanguageId(sentence.sourceLanguage);
+
   setBusyState(true);
   setStatus("Checking your English with the AI coach...", "neutral");
 
@@ -837,30 +1296,40 @@ async function submitAttempt(options) {
     let payload;
 
     if (options.type === "audio") {
-      payload = await fetchJson(`/api/attempt?id=${encodeURIComponent(sentence.id)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": options.blob.type || "application/octet-stream"
-        },
-        body: options.blob
-      });
+      payload = await fetchJson(
+        `/api/attempt?id=${encodeURIComponent(sentence.id)}&language=${encodeURIComponent(sourceLanguageId)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": options.blob.type || "application/octet-stream"
+          },
+          body: options.blob
+        }
+      );
     } else {
-      payload = await fetchJson(`/api/attempt?id=${encodeURIComponent(sentence.id)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          attemptText: options.text
-        })
-      });
+      payload = await fetchJson(
+        `/api/attempt?id=${encodeURIComponent(sentence.id)}&language=${encodeURIComponent(sourceLanguageId)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            attemptText: options.text
+          })
+        }
+      );
     }
 
     const { transcript, evaluation } = payload;
     elements.transcriptText.textContent = transcript;
     elements.feedbackText.textContent = evaluation.feedback;
-    elements.idealAnswerText.textContent = evaluation.idealAnswer;
-    elements.verdictValue.textContent = `${evaluation.verdict} - ${evaluation.score}`;
+    setIdealAnswer(evaluation.idealAnswer, sourceLanguageId);
+    elements.verdictValue.textContent = formatVerdictValue(
+      evaluation.verdict,
+      evaluation.score,
+      sourceLanguageId
+    );
 
     if (evaluation.passed) {
       state.correctCount += 1;
@@ -869,7 +1338,7 @@ async function submitAttempt(options) {
       setStatus("Correct enough to move on. Loading the next sentence...", "success");
 
       const sentenceId = sentence.id;
-      speakEnglishFeedback(elements.statusText.textContent, evaluation.feedback)
+      speakFeedback(evaluation.feedback, sourceLanguageId)
         .then((didSpeak) => {
           if (currentSentence()?.id !== sentenceId) {
             return;
@@ -892,7 +1361,7 @@ async function submitAttempt(options) {
         });
     } else {
       setStatus("Not quite yet. Listen again and try another English version.", "warning");
-      void speakEnglishFeedback(elements.statusText.textContent, evaluation.feedback);
+      void speakFeedback(evaluation.feedback, sourceLanguageId);
     }
   } catch (error) {
     setStatus(error.message, "danger");
@@ -907,7 +1376,6 @@ async function startUploadRecording() {
     state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mimeType = pickRecordingMimeType();
     state.mediaChunks = [];
-    resetBrowserSpeechTranscript();
 
     state.mediaRecorder = mimeType
       ? new MediaRecorder(state.mediaStream, { mimeType })
@@ -920,10 +1388,18 @@ async function startUploadRecording() {
     });
 
     state.mediaRecorder.addEventListener("stop", async () => {
+      const transcript = pickPreferredTranscript();
       const recorderMimeType = state.mediaRecorder?.mimeType || mimeType || "audio/webm";
       const audioBlob = new Blob(state.mediaChunks, { type: recorderMimeType });
       cleanupRecordingResources();
       syncControlState();
+
+      if (transcript) {
+        elements.transcriptText.textContent = transcript;
+        await submitAttempt({ type: "text", text: transcript });
+        return;
+      }
+
       await submitAttempt({ type: "audio", blob: audioBlob });
     });
 
@@ -950,7 +1426,6 @@ async function startUploadRecording() {
 async function startLiveRecording() {
   stopPlayback();
   resetLiveTranscriptState();
-  resetBrowserSpeechTranscript();
   elements.transcriptText.textContent = "Connecting live transcript...";
   state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -1003,6 +1478,7 @@ async function startLiveRecording() {
   state.isRecording = true;
   const hasPreview = startBrowserInterimTranscript();
   syncControlState();
+  startLiveCommitLoop();
   elements.transcriptText.textContent = hasPreview
     ? "Listening for your English..."
     : "Waiting for the live transcript...";
@@ -1040,6 +1516,7 @@ function stopLiveRecording() {
     return;
   }
 
+  const hasPreviewTranscript = Boolean(pickPreferredTranscript());
   state.isRecording = false;
   state.isFinalizingRecording = true;
   stopBrowserSpeechRecognition();
@@ -1055,14 +1532,23 @@ function stopLiveRecording() {
   updateLiveTranscriptPreview("Finalizing transcript...");
   clearLiveFinalizeTimers();
 
-  state.liveCommitTimer = window.setTimeout(() => {
-    sendLiveEvent({ type: "input_audio_buffer.commit" });
-    queueLiveFinalize(1200);
-  }, 180);
+  if (hasPreviewTranscript) {
+    queueLiveFinalize(250);
+  }
+
+  scheduleLiveBufferCommit(120, {
+    allowDuringFinalize: true,
+    onFailure: () => {
+      queueLiveFinalize(120);
+    },
+    onSuccess: () => {
+      queueLiveFinalize(hasPreviewTranscript ? 700 : 1200);
+    }
+  });
 
   state.liveHardTimeout = window.setTimeout(() => {
     void finalizeLiveTranscriptSubmission();
-  }, 5000);
+  }, hasPreviewTranscript ? 2200 : 5000);
 }
 
 function stopUploadRecording() {
@@ -1073,7 +1559,10 @@ function stopUploadRecording() {
   state.isRecording = false;
   stopBrowserSpeechRecognition();
   syncControlState();
-  setStatus("Uploading your audio...", "neutral");
+  setStatus(
+    pickPreferredTranscript() ? "Finalizing your transcript..." : "Uploading your audio...",
+    "neutral"
+  );
   state.mediaRecorder.stop();
 }
 
@@ -1098,6 +1587,12 @@ async function toggleRecording() {
     return;
   }
 
+  resetBrowserSpeechTranscript();
+  const previewStarted = startBrowserInterimTranscript();
+  if (previewStarted) {
+    elements.transcriptText.textContent = "Listening for your English...";
+  }
+
   await startRecording();
 }
 
@@ -1117,6 +1612,7 @@ function advanceSentence() {
 
 async function loadLesson() {
   stopPlayback();
+  clearNarrationCache();
   clearTimeout(state.autoAdvanceTimer);
   cleanupRecordingResources();
   state.isRecording = false;
@@ -1126,6 +1622,11 @@ async function loadLesson() {
   syncControlState();
   setBusyState(true);
 
+  const requestedSourceLanguageId = getSourceLanguageId(
+    elements.sourceLanguageSelect?.value || state.selectedSourceLanguage || "indonesian"
+  );
+  const requestedSourceLanguageLabel =
+    elements.sourceLanguageSelect?.selectedOptions?.[0]?.textContent?.trim() || "Indonesian";
   const requestedDifficultyId = String(
     elements.difficultySelect?.value || state.selectedDifficulty || "beginner"
   )
@@ -1133,26 +1634,41 @@ async function loadLesson() {
     .toLowerCase() || "beginner";
   const requestedDifficultyLabel =
     elements.difficultySelect?.selectedOptions?.[0]?.textContent?.trim() || "Beginner";
+  state.selectedSourceLanguage = requestedSourceLanguageId;
   state.selectedDifficulty = requestedDifficultyId;
-  setStatus(`Loading a ${requestedDifficultyLabel.toLowerCase()} lesson...`, "neutral");
+  updateSourceLanguageUi(state.selectedSourceLanguage);
+  let shouldAutoPlaySentence = false;
+  setStatus(
+    `Loading a ${requestedDifficultyLabel.toLowerCase()} ${requestedSourceLanguageLabel.toLowerCase()} lesson...`,
+    "neutral"
+  );
 
   try {
     const payload = await fetchJson(
-      `/api/lesson?difficulty=${encodeURIComponent(requestedDifficultyId)}`
+      `/api/lesson?difficulty=${encodeURIComponent(requestedDifficultyId)}&language=${encodeURIComponent(requestedSourceLanguageId)}`,
+      { cache: "no-store" }
     );
     const difficultyLabel = payload.difficulty?.label || requestedDifficultyLabel;
+    const sourceLanguageLabel = payload.sourceLanguage?.label || requestedSourceLanguageLabel;
     state.lesson = payload.lesson;
     state.hasOpenAiKey = Boolean(payload.hasOpenAiKey);
+    state.selectedSourceLanguage = payload.sourceLanguage?.id || requestedSourceLanguageId;
     state.selectedDifficulty = payload.difficulty?.id || requestedDifficultyId;
+    elements.sourceLanguageSelect.value = state.selectedSourceLanguage;
     elements.difficultySelect.value = state.selectedDifficulty;
-    elements.lessonMeta.textContent = `${payload.lesson.length} ${difficultyLabel} prompts | ${payload.models.grader}`;
+    updateSourceLanguageUi(state.selectedSourceLanguage);
+    elements.lessonMeta.textContent =
+      `${payload.lesson.length} ${difficultyLabel} prompts | ${sourceLanguageLabel} -> English | ${payload.models.grader}`;
     elements.voiceDisclosure.textContent = payload.hasOpenAiKey
-      ? "AI Hindi narration is active, browser speech reads feedback aloud, and supported browsers show an instant transcript preview while OpenAI finalizes the graded transcript."
-      : "OpenAI key not found. Browser speech fallback will be used for narration, and transcript will appear after you stop recording.";
+      ? `AI ${sourceLanguageLabel} narration is active, browser speech reads feedback aloud, and supported browsers show an instant transcript preview while OpenAI finalizes the graded transcript.`
+      : `OpenAI key not found. Browser speech fallback will be used for ${sourceLanguageLabel.toLowerCase()} narration, and transcript will appear after you stop recording.`;
 
     renderSentence();
-    setStatus(`${difficultyLabel} lesson ready. Listen carefully, then answer in English.`, "neutral");
-    void playCurrentSentence();
+    setStatus(
+      `${difficultyLabel} ${sourceLanguageLabel} lesson ready. Listen carefully, then answer in English.`,
+      "neutral"
+    );
+    shouldAutoPlaySentence = Boolean(currentSentence());
   } catch (error) {
     state.lesson = [];
     state.hasOpenAiKey = false;
@@ -1160,6 +1676,9 @@ async function loadLesson() {
     setStatus(error.message, "danger");
   } finally {
     setBusyState(false);
+    if (shouldAutoPlaySentence) {
+      void playCurrentSentence();
+    }
   }
 }
 
@@ -1179,7 +1698,7 @@ function handleTypedSubmit() {
 }
 
 elements.playButton.addEventListener("click", () => {
-  void playCurrentSentence();
+  void playCurrentSentence({ preferImmediate: true });
 });
 
 elements.skipButton.addEventListener("click", () => {
@@ -1201,6 +1720,16 @@ elements.difficultySelect.addEventListener("change", () => {
   void loadLesson();
 });
 
+elements.sourceLanguageSelect.addEventListener("change", () => {
+  if (state.isSubmitting || state.isRecording || state.isFinalizingRecording) {
+    return;
+  }
+
+  state.selectedSourceLanguage = getSourceLanguageId(elements.sourceLanguageSelect.value);
+  updateSourceLanguageUi(state.selectedSourceLanguage);
+  void loadLesson();
+});
+
 elements.newLessonButton.addEventListener("click", () => {
   if (state.isRecording || state.isFinalizingRecording) {
     return;
@@ -1214,13 +1743,16 @@ elements.recordButton.addEventListener("click", () => {
 });
 
 elements.submitTypedButton.addEventListener("click", handleTypedSubmit);
+if (elements.revealIdealAnswerButton) {
+  elements.revealIdealAnswerButton.addEventListener("click", toggleIdealAnswerVisibility);
+}
 
 window.addEventListener("beforeunload", () => {
   stopPlayback();
+  clearNarrationCache();
   cleanupRecordingResources();
 });
 
 syncControlState();
+updateSourceLanguageUi(state.selectedSourceLanguage);
 void loadLesson();
-
-

@@ -22,6 +22,7 @@ const LESSON_SIZE = 10;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const MAX_SDP_BYTES = 256 * 1024;
+const TTS_AUDIO_CACHE = new Map();
 
 const DIFFICULTY_OPTIONS = [
   { id: "beginner", label: "Beginner" },
@@ -32,6 +33,32 @@ const DIFFICULTY_OPTIONS = [
 const DEFAULT_DIFFICULTY_ID = DIFFICULTY_OPTIONS[0].id;
 const DIFFICULTY_OPTIONS_BY_ID = new Map(
   DIFFICULTY_OPTIONS.map((option) => [option.id, option])
+);
+const SOURCE_LANGUAGE_OPTIONS = [
+  {
+    id: "indonesian",
+    label: "Indonesian",
+    sentenceKey: "indonesian",
+    learnerLabel: "Indonesian-speaking",
+    ttsInstructions:
+      "Speak in clear Indonesian with a warm female teaching voice at a brisk pace so learners can repeat the line easily.",
+    feedbackTtsInstructions:
+      "Speak in clear Indonesian with a warm female coaching voice. This is short spoken feedback to a learner about whether their English translation was correct. Sound supportive, direct, and natural."
+  },
+  {
+    id: "hindi",
+    label: "Hindi",
+    sentenceKey: "hindi",
+    learnerLabel: "Hindi-speaking",
+    ttsInstructions:
+      "Speak in clear Hindi with a warm female teaching voice at a brisk pace so learners can repeat the line easily.",
+    feedbackTtsInstructions:
+      "Speak in clear Hindi with a warm female coaching voice. This is short spoken feedback to a learner about whether their English translation was correct. Sound supportive, direct, and natural."
+  }
+];
+const DEFAULT_SOURCE_LANGUAGE_ID = SOURCE_LANGUAGE_OPTIONS[0].id;
+const SOURCE_LANGUAGE_OPTIONS_BY_ID = new Map(
+  SOURCE_LANGUAGE_OPTIONS.map((option) => [option.id, option])
 );
 
 const JSON_SCHEMA = {
@@ -115,7 +142,8 @@ function sendJson(response, statusCode, payload) {
   const body = JSON.stringify(payload);
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(body)
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store"
   });
   response.end(body);
 }
@@ -197,6 +225,33 @@ function getDifficultyOption(value) {
   return DIFFICULTY_OPTIONS_BY_ID.get(normalizeDifficultyId(value));
 }
 
+function normalizeSourceLanguageId(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return SOURCE_LANGUAGE_OPTIONS_BY_ID.has(normalizedValue)
+    ? normalizedValue
+    : DEFAULT_SOURCE_LANGUAGE_ID;
+}
+
+function getSourceLanguageOption(value) {
+  return SOURCE_LANGUAGE_OPTIONS_BY_ID.get(normalizeSourceLanguageId(value));
+}
+
+function getSentenceSourceText(sentence, sourceLanguageId) {
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
+  return String(
+    sentence?.[sourceLanguage.sentenceKey] ||
+      sentence?.[SOURCE_LANGUAGE_OPTIONS_BY_ID.get(DEFAULT_SOURCE_LANGUAGE_ID)?.sentenceKey] ||
+      sentence?.hindi ||
+      ""
+  ).trim();
+}
+
+function getTtsCacheKey(sentenceId, sourceLanguageId) {
+  const normalizedSentenceId = String(sentenceId || "").trim();
+  const normalizedSourceLanguageId = normalizeSourceLanguageId(sourceLanguageId);
+  return normalizedSentenceId ? `${normalizedSourceLanguageId}:${normalizedSentenceId}` : "";
+}
+
 function getSentenceDifficultyId(sentence) {
   return normalizeDifficultyId(sentence.difficulty || sentence.level);
 }
@@ -214,12 +269,20 @@ function getLessonPool(difficultyId) {
   );
 }
 
-function buildLesson(difficultyId = DEFAULT_DIFFICULTY_ID) {
+function buildLesson(
+  difficultyId = DEFAULT_DIFFICULTY_ID,
+  sourceLanguageId = DEFAULT_SOURCE_LANGUAGE_ID
+) {
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
   return shuffle(getLessonPool(difficultyId))
     .slice(0, LESSON_SIZE)
     .map((sentence) => ({
       id: sentence.id,
       hindi: sentence.hindi,
+      indonesian: sentence.indonesian,
+      sourceText: getSentenceSourceText(sentence, sourceLanguage.id),
+      sourceLanguage: sourceLanguage.id,
+      sourceLanguageLabel: sourceLanguage.label,
       level: sentence.level,
       category: sentence.category
     }));
@@ -251,17 +314,38 @@ function normalizeOpenAiError(errorPayload, fallbackMessage) {
   }
 }
 
+function normalizeOpenAiNetworkError(error, fallbackMessage) {
+  const rawMessage = String(error?.message || "").trim().toLowerCase();
+  if (!rawMessage) {
+    return fallbackMessage;
+  }
+
+  if (rawMessage.includes("fetch failed") || rawMessage.includes("network")) {
+    return `${fallbackMessage} OpenAI could not be reached. Check your internet connection, OPENAI_API_KEY, and OPENAI_BASE_URL.`;
+  }
+
+  return fallbackMessage;
+}
+
 async function callOpenAiJson(endpoint, payload) {
   requireApiKey();
+  let response;
 
-  const response = await fetch(apiUrl(endpoint), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  try {
+    response = await fetch(apiUrl(endpoint), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiNetworkError(error, "OpenAI request failed.")
+    );
+  }
 
   const responseText = await response.text();
   if (!response.ok) {
@@ -274,24 +358,54 @@ async function callOpenAiJson(endpoint, payload) {
   return JSON.parse(responseText);
 }
 
-async function synthesizeHindiSpeech(sentence) {
+async function synthesizeSourceSpeech(sentence, sourceLanguageId) {
   requireApiKey();
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
+  const cacheKey = getTtsCacheKey(sentence?.id, sourceLanguage.id);
+  return synthesizeSpeechText(
+    getSentenceSourceText(sentence, sourceLanguage.id),
+    sourceLanguage.id,
+    sourceLanguage.ttsInstructions,
+    cacheKey
+  );
+}
 
-  const response = await fetch(apiUrl("/audio/speech"), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: OPENAI_TTS_MODEL,
-      voice: OPENAI_TTS_VOICE,
-      input: sentence.hindi,
-      instructions:
-        "Speak in clear Hindi with a warm female teaching voice at a brisk pace so learners can repeat the line easily.",
-      response_format: "mp3"
-    })
-  });
+async function synthesizeSpeechText(text, sourceLanguageId, instructions, cacheKey = "") {
+  requireApiKey();
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
+  const inputText = String(text || "").trim();
+
+  if (!inputText) {
+    throw createHttpError(400, "Speech text is missing.");
+  }
+
+  if (cacheKey && TTS_AUDIO_CACHE.has(cacheKey)) {
+    return TTS_AUDIO_CACHE.get(cacheKey);
+  }
+
+  let response;
+
+  try {
+    response = await fetch(apiUrl("/audio/speech"), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OPENAI_TTS_MODEL,
+        voice: OPENAI_TTS_VOICE,
+        input: inputText,
+        instructions: String(instructions || sourceLanguage.ttsInstructions || "").trim(),
+        response_format: "mp3"
+      })
+    });
+  } catch (error) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiNetworkError(error, "OpenAI speech generation failed.")
+    );
+  }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   if (!response.ok) {
@@ -301,11 +415,25 @@ async function synthesizeHindiSpeech(sentence) {
     );
   }
 
+  if (cacheKey) {
+    TTS_AUDIO_CACHE.set(cacheKey, audioBuffer);
+  }
+
   return audioBuffer;
 }
 
-async function transcribeLearnerAudio(audioBuffer, mimeType) {
+async function synthesizeFeedbackSpeech(text, sourceLanguageId) {
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
+  return synthesizeSpeechText(
+    text,
+    sourceLanguage.id,
+    sourceLanguage.feedbackTtsInstructions
+  );
+}
+
+async function transcribeLearnerAudio(audioBuffer, mimeType, sourceLanguageId) {
   requireApiKey();
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
 
   const form = new FormData();
   const extension = getAudioExtension(mimeType);
@@ -318,16 +446,25 @@ async function transcribeLearnerAudio(audioBuffer, mimeType) {
   form.append("response_format", "text");
   form.append(
     "prompt",
-    "This audio contains a learner speaking an English translation of a Hindi sentence."
+    `This audio contains a learner speaking an English translation of a ${sourceLanguage.label} sentence.`
   );
 
-  const response = await fetch(apiUrl("/audio/transcriptions"), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`
-    },
-    body: form
-  });
+  let response;
+
+  try {
+    response = await fetch(apiUrl("/audio/transcriptions"), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: form
+    });
+  } catch (error) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiNetworkError(error, "OpenAI transcription failed.")
+    );
+  }
 
   const transcript = (await response.text()).trim();
   if (!response.ok) {
@@ -344,33 +481,42 @@ async function transcribeLearnerAudio(audioBuffer, mimeType) {
   return transcript;
 }
 
-async function createRealtimeTranscriptionToken() {
+async function createRealtimeTranscriptionToken(sourceLanguageId) {
   requireApiKey();
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
+  let response;
 
-  const response = await fetch(apiUrl("/realtime/transcription_sessions"), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      input_audio_noise_reduction: {
-        type: "near_field"
+  try {
+    response = await fetch(apiUrl("/realtime/transcription_sessions"), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
       },
-      input_audio_transcription: {
-        model: OPENAI_REALTIME_TRANSCRIBE_MODEL,
-        language: "en",
-        prompt:
-          "The speaker is a Hindi-speaking learner answering in English. Prefer natural English text, and ignore brief Hindi prompt bleed or background Hindi when possible."
-      },
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.5,
-        prefix_padding_ms: 300,
-        silence_duration_ms: 250
-      }
-    })
-  });
+      body: JSON.stringify({
+        input_audio_noise_reduction: {
+          type: "near_field"
+        },
+        input_audio_transcription: {
+          model: OPENAI_REALTIME_TRANSCRIBE_MODEL,
+          language: "en",
+          prompt:
+            `The speaker is a ${sourceLanguage.learnerLabel} learner answering in English. Prefer natural English text, and ignore brief ${sourceLanguage.label} prompt bleed or background ${sourceLanguage.label} when possible.`
+        },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 250
+        }
+      })
+    });
+  } catch (error) {
+    throw createHttpError(
+      502,
+      normalizeOpenAiNetworkError(error, "OpenAI realtime transcription token setup failed.")
+    );
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -394,21 +540,23 @@ async function createRealtimeTranscriptionToken() {
   };
 }
 
-async function gradeAttempt(sentence, transcript) {
+async function gradeAttempt(sentence, transcript, sourceLanguageId) {
+  const sourceLanguage = getSourceLanguageOption(sourceLanguageId);
   const payload = {
     model: OPENAI_GRADER_MODEL,
     messages: [
       {
         role: "system",
         content:
-          "You are grading spoken English translations for a Hindi-speaking learner. Accept natural paraphrases, contractions, minor filler words, and small speech-to-text errors when the meaning is still correct. Set passed to true only when the learner clearly communicated the right meaning and can move on. Use verdict close when the learner is partly right but should retry. Keep feedback short, warm, and direct. Give one natural idealAnswer in simple English."
+          `You are grading spoken English translations for a ${sourceLanguage.learnerLabel} learner. Accept natural paraphrases, contractions, minor filler words, and small speech-to-text errors when the meaning is still correct. Set passed to true only when the learner clearly communicated the right meaning and can move on. Use verdict close when the learner is partly right but should retry. Write feedback in ${sourceLanguage.label}. Keep feedback short, warm, and direct. Give one natural idealAnswer in simple English.`
       },
       {
         role: "user",
         content: JSON.stringify({
-          source_language: "Hindi",
+          source_language: sourceLanguage.label,
           target_language: "English",
-          hindi_sentence: sentence.hindi,
+          feedback_language: sourceLanguage.label,
+          source_sentence: getSentenceSourceText(sentence, sourceLanguage.id),
           reference_translation: sentence.english,
           learner_transcript: transcript,
           level: sentence.level,
@@ -438,12 +586,17 @@ async function gradeAttempt(sentence, transcript) {
 
 async function handleLessonRequest(requestUrl, response) {
   const difficulty = getDifficultyOption(requestUrl.searchParams.get("difficulty"));
+  const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
 
   sendJson(response, 200, {
-    lesson: buildLesson(difficulty.id),
+    lesson: buildLesson(difficulty.id, sourceLanguage.id),
     difficulty: {
       id: difficulty.id,
       label: difficulty.label
+    },
+    sourceLanguage: {
+      id: sourceLanguage.id,
+      label: sourceLanguage.label
     },
     hasOpenAiKey: Boolean(OPENAI_API_KEY),
     models: {
@@ -458,12 +611,13 @@ async function handleLessonRequest(requestUrl, response) {
 async function handleTextToSpeechRequest(requestUrl, response) {
   const sentenceId = requestUrl.searchParams.get("id");
   const sentence = findSentence(sentenceId);
+  const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
 
   if (!sentence) {
     throw createHttpError(404, "Sentence not found.");
   }
 
-  const audioBuffer = await synthesizeHindiSpeech(sentence);
+  const audioBuffer = await synthesizeSourceSpeech(sentence, sourceLanguage.id);
   response.writeHead(200, {
     "Content-Type": "audio/mpeg",
     "Content-Length": audioBuffer.length,
@@ -472,14 +626,35 @@ async function handleTextToSpeechRequest(requestUrl, response) {
   response.end(audioBuffer);
 }
 
-async function handleRealtimeTranscriptionTokenRequest(response) {
-  const token = await createRealtimeTranscriptionToken();
+async function handleFeedbackTextToSpeechRequest(request, response) {
+  const bodyBuffer = await readRequestBody(request, MAX_JSON_BYTES);
+  const parsedBody = JSON.parse(bodyBuffer.toString("utf8"));
+  const sourceLanguage = getSourceLanguageOption(parsedBody.language);
+  const feedbackText = String(parsedBody.text || "").trim();
+
+  if (!feedbackText) {
+    throw createHttpError(400, "Feedback text is missing.");
+  }
+
+  const audioBuffer = await synthesizeFeedbackSpeech(feedbackText, sourceLanguage.id);
+  response.writeHead(200, {
+    "Content-Type": "audio/mpeg",
+    "Content-Length": audioBuffer.length,
+    "Cache-Control": "no-store"
+  });
+  response.end(audioBuffer);
+}
+
+async function handleRealtimeTranscriptionTokenRequest(requestUrl, response) {
+  const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
+  const token = await createRealtimeTranscriptionToken(sourceLanguage.id);
   sendJson(response, 200, token);
 }
 
 async function handleAttemptRequest(request, requestUrl, response) {
   const sentenceId = requestUrl.searchParams.get("id");
   const sentence = findSentence(sentenceId);
+  const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
 
   if (!sentence) {
     throw createHttpError(404, "Sentence not found.");
@@ -502,10 +677,14 @@ async function handleAttemptRequest(request, requestUrl, response) {
       throw createHttpError(400, "Audio input is missing.");
     }
 
-    transcript = await transcribeLearnerAudio(audioBuffer, mimeType || "audio/webm");
+    transcript = await transcribeLearnerAudio(
+      audioBuffer,
+      mimeType || "audio/webm",
+      sourceLanguage.id
+    );
   }
 
-  const evaluation = await gradeAttempt(sentence, transcript);
+  const evaluation = await gradeAttempt(sentence, transcript, sourceLanguage.id);
 
   sendJson(response, 200, {
     sentenceId,
@@ -569,11 +748,16 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/api/feedback-tts") {
+      await handleFeedbackTextToSpeechRequest(request, response);
+      return;
+    }
+
     if (
       request.method === "POST" &&
       requestUrl.pathname === "/api/realtime-transcription/token"
     ) {
-      await handleRealtimeTranscriptionTokenRequest(response);
+      await handleRealtimeTranscriptionTokenRequest(requestUrl, response);
       return;
     }
 
@@ -603,4 +787,3 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, () => {
   console.log(`English speaking practice app running at http://localhost:${PORT}`);
 });
-

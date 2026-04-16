@@ -1,11 +1,12 @@
 # BolChaal English Lab
 
-A small Hindi-to-English speaking practice website built with a plain Node server and OpenAI APIs.
+A small Indonesian-to-English and Hindi-to-English speaking practice website built with a plain Node server and OpenAI APIs.
 
 ## What it does
 
-- Shows one Hindi sentence at a time.
-- Narrates the Hindi sentence with OpenAI text-to-speech.
+- Lets the learner choose Indonesian or Hindi as the source language.
+- Shows one source-language sentence at a time.
+- Narrates the source-language sentence with OpenAI text-to-speech.
 - Lets the learner answer by microphone or typed English.
 - Uses OpenAI speech-to-text for spoken attempts.
 - Uses structured JSON grading to decide whether the answer is correct enough to move forward.
@@ -34,5 +35,5 @@ You can change any of these in `.env`.
 ## Notes
 
 - No external npm packages are required.
-- If the OpenAI key is missing, the UI still loads and falls back to browser speech for Hindi narration.
+- If the OpenAI key is missing, the UI still loads and falls back to browser speech for source-language narration.
 - The microphone flow depends on browser support for `MediaRecorder` and user microphone permission.
