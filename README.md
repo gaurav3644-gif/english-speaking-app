@@ -1,4 +1,4 @@
-# BolChaal English Lab
+# GuruSpeaking English Lab
 
 A small Indonesian-to-English and Hindi-to-English speaking practice website built with a plain Node server and OpenAI APIs.
 
