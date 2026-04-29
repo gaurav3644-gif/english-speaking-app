@@ -638,7 +638,7 @@ function summarizeEvents(events, startTime) {
       activeUsers.add(event.userId);
     }
 
-    applyUsageDelta(summary, getEventMetricDeltaForEvent(event.type, event.metadata));
+    applyUsageDelta(summary, getMetricDeltaForEvent(event.type, event.metadata));
   }
 
   return {
