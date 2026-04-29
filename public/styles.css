@@ -975,14 +975,13 @@ body.auth-modal-open {
 .sentence-text {
   margin: 14px 0 10px;
   font-family: var(--display-font);
-  font-weight: 800;
   font-size: clamp(2.6rem, 4.2vw, 4.9rem);
   line-height: 1.02;
   color: var(--ink);
   text-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9),
-    0 0 1px rgba(244, 13, 48, 0.14),
-    0 0 18px rgba(244, 13, 48, 0.1);
+    0 0 1px rgba(244, 13, 48, 0.18),
+    0 0 12px rgba(244, 13, 48, 0.12),
+    0 0 28px rgba(244, 13, 48, 0.08);
 }
 
 .sentence-subtext {
