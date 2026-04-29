@@ -37,6 +37,7 @@ const MAX_SDP_BYTES = 256 * 1024;
 const TTS_AUDIO_CACHE = new Map();
 const SESSION_COOKIE_NAME = "guru_session";
 const TRACKABLE_EVENT_TYPES = new Set([
+  "active_time",
   "recording_started",
   "lesson_completed",
   "sentence_skipped"

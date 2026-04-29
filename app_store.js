@@ -17,6 +17,7 @@ const BASE_USAGE_COUNTERS = Object.freeze({
   guestLogins: 0,
   otpLogins: 0,
   otpRequests: 0,
+  activeSeconds: 0,
   lessonsLoaded: 0,
   attempts: 0,
   correctAttempts: 0,
@@ -263,6 +264,10 @@ function createSession(store, user) {
 
 function getMetricDeltaForEvent(type, metadata = {}) {
   const counters = cloneUsageCounters();
+  const normalizedActiveSeconds = Math.max(
+    0,
+    Math.min(120, Math.round(Number(metadata.seconds || 0)))
+  );
 
   switch (type) {
     case "guest_login":
@@ -275,6 +280,9 @@ function getMetricDeltaForEvent(type, metadata = {}) {
     case "otp_verified":
       counters.logins = 1;
       counters.otpLogins = 1;
+      break;
+    case "active_time":
+      counters.activeSeconds = normalizedActiveSeconds;
       break;
     case "lesson_loaded":
       counters.lessonsLoaded = 1;
@@ -684,30 +692,15 @@ function getUsageDashboard(userId) {
     throw createStoreError(404, "User not found.");
   }
 
+  const userEvents = store.events.filter((event) => event.userId === normalizedUserId);
+
   const dashboard = {
     currentUser: buildUserSnapshot(user, { includeUsage: true }),
-    topUsers: store.users
-      .map((entry) => buildUserSnapshot(entry, { includeUsage: true }))
-      .sort((left, right) => {
-        const attemptDelta = Number(right.usage.attempts || 0) - Number(left.usage.attempts || 0);
-        if (attemptDelta !== 0) {
-          return attemptDelta;
-        }
-
-        const lessonDelta =
-          Number(right.usage.lessonsLoaded || 0) - Number(left.usage.lessonsLoaded || 0);
-        if (lessonDelta !== 0) {
-          return lessonDelta;
-        }
-
-        return Number(right.usage.logins || 0) - Number(left.usage.logins || 0);
-      })
-      .slice(0, 6),
-    overall: {
-      today: summarizeEvents(store.events, getStartOfToday()),
-      week: summarizeEvents(store.events, getStartOfWeek()),
-      month: summarizeEvents(store.events, getStartOfMonth()),
-      allTime: summarizeEvents(store.events)
+    windows: {
+      today: summarizeEvents(userEvents, getStartOfToday()),
+      week: summarizeEvents(userEvents, getStartOfWeek()),
+      month: summarizeEvents(userEvents, getStartOfMonth()),
+      allTime: summarizeEvents(userEvents)
     }
   };
 

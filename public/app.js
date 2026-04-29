@@ -36,7 +36,9 @@ const state = {
   narrationPreloads: new Map(),
   autoAdvanceTimer: null,
   currentIdealAnswer: "",
-  isIdealAnswerVisible: false
+  isIdealAnswerVisible: false,
+  activeUsageIntervalId: 0,
+  activeUsageLastTickAt: 0
 };
 
 const elements = {
@@ -71,6 +73,7 @@ const elements = {
   userLessonsMetric: document.querySelector("#userLessonsMetric"),
   userAttemptsMetric: document.querySelector("#userAttemptsMetric"),
   userCorrectMetric: document.querySelector("#userCorrectMetric"),
+  userTimeMetric: document.querySelector("#userTimeMetric"),
   todayUsageValue: document.querySelector("#todayUsageValue"),
   todayUsageMeta: document.querySelector("#todayUsageMeta"),
   weekUsageValue: document.querySelector("#weekUsageValue"),
@@ -162,6 +165,9 @@ const SOURCE_LANGUAGE_UI = {
   }
 };
 
+const ACTIVE_USAGE_FLUSH_MS = 30000;
+const MAX_ACTIVE_USAGE_CHUNK_SECONDS = 120;
+
 function pluralize(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -180,6 +186,23 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(parsedValue);
+}
+
+function formatDurationCompact(totalSeconds) {
+  const normalizedSeconds = Math.max(0, Math.round(Number(totalSeconds || 0)));
+  const hours = Math.floor(normalizedSeconds / 3600);
+  const minutes = Math.floor((normalizedSeconds % 3600) / 60);
+  const seconds = normalizedSeconds % 60;
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return seconds > 0 ? `${seconds}s` : "0m";
 }
 
 function setAuthModalOpen(isOpen) {
@@ -327,16 +350,16 @@ function updateSessionSummary() {
   }
 }
 
-function setUsageWindow(valueElement, metaElement, summary) {
+function setPersonalUsageWindow(valueElement, metaElement, summary) {
   if (valueElement) {
     valueElement.textContent = pluralize(Number(summary?.attempts || 0), "attempt");
   }
 
   if (metaElement) {
     metaElement.textContent =
-      `${pluralize(Number(summary?.activeUsers || 0), "user")} | ` +
       `${pluralize(Number(summary?.lessonsLoaded || 0), "lesson")} | ` +
-      `${pluralize(Number(summary?.logins || 0), "login")}`;
+      `${pluralize(Number(summary?.correctAttempts || 0), "correct attempt")} | ` +
+      `${formatDurationCompact(summary?.activeSeconds || 0)}`;
   }
 }
 
@@ -382,7 +405,7 @@ function renderUsageLeaderboard(topUsers = []) {
 
 function resetUsageDashboard() {
   if (elements.usageUserMeta) {
-    elements.usageUserMeta.textContent = "Sign in to load your usage and app activity metrics.";
+    elements.usageUserMeta.textContent = "Sign in to load your personal usage metrics.";
   }
 
   if (elements.userLoginsMetric) {
@@ -397,11 +420,14 @@ function resetUsageDashboard() {
   if (elements.userCorrectMetric) {
     elements.userCorrectMetric.textContent = "0";
   }
+  if (elements.userTimeMetric) {
+    elements.userTimeMetric.textContent = "0m";
+  }
 
-  setUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, {});
-  setUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, {});
-  setUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, {});
-  setUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, {});
+  setPersonalUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, {});
+  setPersonalUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, {});
+  setPersonalUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, {});
+  setPersonalUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, {});
   renderUsageLeaderboard([]);
 }
 
@@ -435,12 +461,15 @@ function renderUsageDashboard(dashboard) {
   if (elements.userCorrectMetric) {
     elements.userCorrectMetric.textContent = String(usage.correctAttempts || 0);
   }
+  if (elements.userTimeMetric) {
+    elements.userTimeMetric.textContent = formatDurationCompact(usage.activeSeconds || 0);
+  }
 
-  setUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, dashboard?.overall?.today);
-  setUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, dashboard?.overall?.week);
-  setUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, dashboard?.overall?.month);
-  setUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, dashboard?.overall?.allTime);
-  renderUsageLeaderboard(dashboard?.topUsers);
+  setPersonalUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, dashboard?.windows?.today);
+  setPersonalUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, dashboard?.windows?.week);
+  setPersonalUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, dashboard?.windows?.month);
+  setPersonalUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, dashboard?.windows?.allTime);
+  renderUsageLeaderboard([]);
 }
 
 function resetSignedOutWorkspace() {
@@ -494,6 +523,88 @@ function resetSignedOutWorkspace() {
   syncControlState();
 }
 
+function clearActiveUsageInterval() {
+  if (state.activeUsageIntervalId) {
+    window.clearInterval(state.activeUsageIntervalId);
+    state.activeUsageIntervalId = 0;
+  }
+}
+
+async function flushActiveUsage(reason = "interval", options = {}) {
+  const { useBeacon = false, resetClock = false, refreshStats = false } = options;
+
+  if (!state.isAuthenticated) {
+    state.activeUsageLastTickAt = 0;
+    return;
+  }
+
+  const lastTickAt = Number(state.activeUsageLastTickAt || 0);
+  const now = Date.now();
+  state.activeUsageLastTickAt = resetClock ? 0 : now;
+
+  if (!lastTickAt) {
+    return;
+  }
+
+  let elapsedSeconds = Math.floor((now - lastTickAt) / 1000);
+  if (elapsedSeconds <= 0) {
+    return;
+  }
+
+  elapsedSeconds = Math.min(elapsedSeconds, MAX_ACTIVE_USAGE_CHUNK_SECONDS);
+  const payload = {
+    type: "active_time",
+    metadata: {
+      seconds: elapsedSeconds,
+      reason
+    }
+  };
+
+  if (useBeacon && typeof navigator.sendBeacon === "function") {
+    try {
+      const beaconBody = new Blob([JSON.stringify(payload)], {
+        type: "application/json"
+      });
+      navigator.sendBeacon("/api/track", beaconBody);
+    } catch {
+      // Ignore transport issues during tab teardown.
+    }
+    return;
+  }
+
+  await trackUsageEvent(payload.type, payload.metadata, { refreshStats });
+}
+
+function startActiveUsageTracking() {
+  clearActiveUsageInterval();
+
+  if (!state.isAuthenticated || document.hidden) {
+    state.activeUsageLastTickAt = 0;
+    return;
+  }
+
+  state.activeUsageLastTickAt = Date.now();
+  state.activeUsageIntervalId = window.setInterval(() => {
+    if (!state.isAuthenticated || document.hidden) {
+      return;
+    }
+
+    void flushActiveUsage("interval", { refreshStats: true });
+  }, ACTIVE_USAGE_FLUSH_MS);
+}
+
+function stopActiveUsageTracking(options = {}) {
+  const { flushReason = "", useBeacon = false } = options;
+  clearActiveUsageInterval();
+
+  if (flushReason) {
+    void flushActiveUsage(flushReason, { useBeacon, resetClock: true });
+    return;
+  }
+
+  state.activeUsageLastTickAt = 0;
+}
+
 function setAuthenticatedSession(sessionPayload) {
   const isAuthenticated = Boolean(sessionPayload?.authenticated);
   state.isAuthenticated = isAuthenticated;
@@ -503,12 +614,14 @@ function setAuthenticatedSession(sessionPayload) {
   updateAuthCtas();
 
   if (isAuthenticated) {
+    startActiveUsageTracking();
     setPracticeVisibility(true);
     closeAuthModal({ force: true });
     setAuthStatus("");
     return;
   }
 
+  stopActiveUsageTracking();
   resetUsageDashboard();
   resetSignedOutWorkspace();
   setPracticeVisibility(false);
@@ -942,6 +1055,8 @@ async function logoutCurrentUser() {
   if (state.isAuthBusy) {
     return;
   }
+
+  await flushActiveUsage("logout", { resetClock: true });
 
   try {
     await fetch("/api/auth/logout", {
@@ -2461,7 +2576,25 @@ if (elements.revealIdealAnswerButton) {
   elements.revealIdealAnswerButton.addEventListener("click", toggleIdealAnswerVisibility);
 }
 
+document.addEventListener("visibilitychange", () => {
+  if (!state.isAuthenticated) {
+    return;
+  }
+
+  if (document.hidden) {
+    stopActiveUsageTracking({ flushReason: "hidden", useBeacon: true });
+    return;
+  }
+
+  startActiveUsageTracking();
+});
+
+window.addEventListener("pagehide", () => {
+  stopActiveUsageTracking({ flushReason: "pagehide", useBeacon: true });
+});
+
 window.addEventListener("beforeunload", () => {
+  stopActiveUsageTracking({ flushReason: "beforeunload", useBeacon: true });
   stopPlayback();
   clearNarrationCache();
   cleanupRecordingResources();

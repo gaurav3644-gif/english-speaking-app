@@ -52,6 +52,23 @@ function pluralize(value, singular, plural = `${singular}s`) {
   return `${formatNumber(normalizedValue)} ${normalizedValue === 1 ? singular : plural}`;
 }
 
+function formatDurationCompact(totalSeconds) {
+  const normalizedSeconds = Math.max(0, Math.round(Number(totalSeconds || 0)));
+  const hours = Math.floor(normalizedSeconds / 3600);
+  const minutes = Math.floor((normalizedSeconds % 3600) / 60);
+  const seconds = normalizedSeconds % 60;
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return seconds > 0 ? `${seconds}s` : "0m";
+}
+
 function formatWindowSummary(valueElement, metaElement, summary) {
   if (valueElement) {
     valueElement.textContent = pluralize(summary?.attempts || 0, "attempt");
@@ -61,7 +78,8 @@ function formatWindowSummary(valueElement, metaElement, summary) {
     metaElement.textContent =
       `${pluralize(summary?.activeUsers || 0, "user")} | ` +
       `${pluralize(summary?.lessonsLoaded || 0, "lesson")} | ` +
-      `${pluralize(summary?.logins || 0, "login")}`;
+      `${pluralize(summary?.logins || 0, "login")} | ` +
+      `${formatDurationCompact(summary?.activeSeconds || 0)}`;
   }
 }
 
@@ -132,7 +150,7 @@ function renderUsers(users = []) {
   }
 
   if (!Array.isArray(users) || !users.length) {
-    elements.usersTableBody.innerHTML = '<tr><td colspan="9">No users have been created yet.</td></tr>';
+    elements.usersTableBody.innerHTML = '<tr><td colspan="10">No users have been created yet.</td></tr>';
     return;
   }
 
@@ -153,6 +171,7 @@ function renderUsers(users = []) {
           <td>${formatNumber(user.usage?.lessonsLoaded || 0)}</td>
           <td>${formatNumber(user.usage?.attempts || 0)}</td>
           <td>${formatNumber(user.usage?.correctAttempts || 0)}</td>
+          <td>${escapeHtml(formatDurationCompact(user.usage?.activeSeconds || 0))}</td>
           <td>${escapeHtml(formatDateTime(user.lastLoginAt))}</td>
           <td>${escapeHtml(formatDateTime(user.lastSeenAt))}</td>
         </tr>
