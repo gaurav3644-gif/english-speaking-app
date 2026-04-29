@@ -2,6 +2,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 
+const {
+  OTP_ECHO_TO_RESPONSE,
+  SESSION_TTL_SECONDS,
+  clearSession,
+  createGuestSession,
+  createOtpChallenge,
+  getSessionContext,
+  getUsageDashboard,
+  recordUsageEvent,
+  verifyOtpChallenge
+} = require("./app_store");
 const sentenceBank = require("./data/sentences");
 
 loadEnvironment();
@@ -23,6 +34,12 @@ const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const MAX_SDP_BYTES = 256 * 1024;
 const TTS_AUDIO_CACHE = new Map();
+const SESSION_COOKIE_NAME = "guru_session";
+const TRACKABLE_EVENT_TYPES = new Set([
+  "recording_started",
+  "lesson_completed",
+  "sentence_skipped"
+]);
 
 const DIFFICULTY_OPTIONS = [
   { id: "beginner", label: "Beginner" },
@@ -154,6 +171,105 @@ function sendText(response, statusCode, body, contentType = "text/plain; charset
     "Content-Length": Buffer.byteLength(body)
   });
   response.end(body);
+}
+
+function parseCookies(request) {
+  const cookieHeader = String(request.headers.cookie || "");
+  const cookies = {};
+
+  for (const cookiePart of cookieHeader.split(";")) {
+    const trimmedPart = cookiePart.trim();
+    if (!trimmedPart) {
+      continue;
+    }
+
+    const separatorIndex = trimmedPart.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmedPart.slice(0, separatorIndex).trim();
+    const value = trimmedPart.slice(separatorIndex + 1).trim();
+    cookies[key] = decodeURIComponent(value);
+  }
+
+  return cookies;
+}
+
+function appendSetCookieHeader(response, cookieValue) {
+  const existingHeader = response.getHeader("Set-Cookie");
+  if (!existingHeader) {
+    response.setHeader("Set-Cookie", cookieValue);
+    return;
+  }
+
+  const nextHeader = Array.isArray(existingHeader)
+    ? [...existingHeader, cookieValue]
+    : [existingHeader, cookieValue];
+  response.setHeader("Set-Cookie", nextHeader);
+}
+
+function setSessionCookie(response, sessionId) {
+  appendSetCookieHeader(
+    response,
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; SameSite=Lax`
+  );
+}
+
+function clearSessionCookie(response) {
+  appendSetCookieHeader(
+    response,
+    `${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`
+  );
+}
+
+function getSessionIdFromRequest(request) {
+  const cookies = parseCookies(request);
+  return String(cookies[SESSION_COOKIE_NAME] || "").trim();
+}
+
+function getAuthContext(request, options = {}) {
+  const sessionId = getSessionIdFromRequest(request);
+  return getSessionContext(sessionId, options);
+}
+
+function requireAuthContext(request) {
+  const context = getAuthContext(request);
+  if (!context) {
+    throw createHttpError(401, "Sign in to continue.");
+  }
+
+  return context;
+}
+
+async function readJsonRequestBody(request) {
+  const bodyBuffer = await readRequestBody(request, MAX_JSON_BYTES);
+
+  try {
+    return JSON.parse(bodyBuffer.toString("utf8"));
+  } catch {
+    throw createHttpError(400, "Request body must be valid JSON.");
+  }
+}
+
+function sanitizeEventMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object") {
+    return {};
+  }
+
+  const cleaned = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (typeof value === "string") {
+      cleaned[key] = value.trim().slice(0, 120);
+      continue;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      cleaned[key] = value;
+    }
+  }
+
+  return cleaned;
 }
 
 function readRequestBody(request, limitBytes) {
@@ -584,9 +700,91 @@ async function gradeAttempt(sentence, transcript, sourceLanguageId) {
   return JSON.parse(message.content);
 }
 
-async function handleLessonRequest(requestUrl, response) {
+async function handleSessionRequest(request, response) {
+  const authContext = getAuthContext(request);
+  if (!authContext) {
+    sendJson(response, 200, {
+      authenticated: false
+    });
+    return;
+  }
+
+  sendJson(response, 200, authContext.session);
+}
+
+async function handleGuestLoginRequest(request, response) {
+  const parsedBody = await readJsonRequestBody(request);
+  const loginResult = createGuestSession(parsedBody);
+  setSessionCookie(response, loginResult.sessionId);
+  sendJson(response, 200, loginResult.session);
+}
+
+async function handleOtpRequestRequest(request, response) {
+  const parsedBody = await readJsonRequestBody(request);
+  const otpResult = createOtpChallenge(parsedBody);
+  console.log(
+    `[OTP] ${otpResult.channel} login code for ${parsedBody.contact}: ${otpResult.code}`
+  );
+
+  sendJson(response, 200, {
+    challengeId: otpResult.challengeId,
+    expiresAt: otpResult.expiresAt,
+    delivery: otpResult.delivery,
+    channel: otpResult.channel,
+    message:
+      "OTP generated. This build writes the code to the server log unless you plug in a real delivery provider.",
+    devCode: OTP_ECHO_TO_RESPONSE ? otpResult.code : undefined
+  });
+}
+
+async function handleOtpVerifyRequest(request, response) {
+  const parsedBody = await readJsonRequestBody(request);
+  const loginResult = verifyOtpChallenge(parsedBody);
+  setSessionCookie(response, loginResult.sessionId);
+  sendJson(response, 200, loginResult.session);
+}
+
+async function handleLogoutRequest(request, response) {
+  const sessionId = getSessionIdFromRequest(request);
+  if (sessionId) {
+    clearSession(sessionId);
+  }
+
+  clearSessionCookie(response);
+  sendJson(response, 200, {
+    ok: true
+  });
+}
+
+async function handleStatsRequest(request, response) {
+  const authContext = requireAuthContext(request);
+  sendJson(response, 200, getUsageDashboard(authContext.userId));
+}
+
+async function handleTrackRequest(request, response) {
+  const authContext = requireAuthContext(request);
+  const parsedBody = await readJsonRequestBody(request);
+  const eventType = String(parsedBody.type || "").trim();
+
+  if (!TRACKABLE_EVENT_TYPES.has(eventType)) {
+    throw createHttpError(400, "Unsupported tracking event.");
+  }
+
+  recordUsageEvent(authContext.userId, eventType, sanitizeEventMetadata(parsedBody.metadata));
+  sendJson(response, 200, {
+    ok: true
+  });
+}
+
+async function handleLessonRequest(request, requestUrl, response) {
+  const authContext = requireAuthContext(request);
   const difficulty = getDifficultyOption(requestUrl.searchParams.get("difficulty"));
   const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
+
+  recordUsageEvent(authContext.userId, "lesson_loaded", {
+    difficulty: difficulty.id,
+    language: sourceLanguage.id
+  });
 
   sendJson(response, 200, {
     lesson: buildLesson(difficulty.id, sourceLanguage.id),
@@ -608,7 +806,8 @@ async function handleLessonRequest(requestUrl, response) {
   });
 }
 
-async function handleTextToSpeechRequest(requestUrl, response) {
+async function handleTextToSpeechRequest(request, requestUrl, response) {
+  const authContext = requireAuthContext(request);
   const sentenceId = requestUrl.searchParams.get("id");
   const sentence = findSentence(sentenceId);
   const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
@@ -617,6 +816,10 @@ async function handleTextToSpeechRequest(requestUrl, response) {
     throw createHttpError(404, "Sentence not found.");
   }
 
+  recordUsageEvent(authContext.userId, "narration_requested", {
+    sentenceId,
+    language: sourceLanguage.id
+  });
   const audioBuffer = await synthesizeSourceSpeech(sentence, sourceLanguage.id);
   response.writeHead(200, {
     "Content-Type": "audio/mpeg",
@@ -627,6 +830,7 @@ async function handleTextToSpeechRequest(requestUrl, response) {
 }
 
 async function handleFeedbackTextToSpeechRequest(request, response) {
+  const authContext = requireAuthContext(request);
   const bodyBuffer = await readRequestBody(request, MAX_JSON_BYTES);
   const parsedBody = JSON.parse(bodyBuffer.toString("utf8"));
   const sourceLanguage = getSourceLanguageOption(parsedBody.language);
@@ -636,6 +840,9 @@ async function handleFeedbackTextToSpeechRequest(request, response) {
     throw createHttpError(400, "Feedback text is missing.");
   }
 
+  recordUsageEvent(authContext.userId, "feedback_audio_requested", {
+    language: sourceLanguage.id
+  });
   const audioBuffer = await synthesizeFeedbackSpeech(feedbackText, sourceLanguage.id);
   response.writeHead(200, {
     "Content-Type": "audio/mpeg",
@@ -645,13 +852,18 @@ async function handleFeedbackTextToSpeechRequest(request, response) {
   response.end(audioBuffer);
 }
 
-async function handleRealtimeTranscriptionTokenRequest(requestUrl, response) {
+async function handleRealtimeTranscriptionTokenRequest(request, requestUrl, response) {
+  const authContext = requireAuthContext(request);
   const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
   const token = await createRealtimeTranscriptionToken(sourceLanguage.id);
+  recordUsageEvent(authContext.userId, "realtime_token_issued", {
+    language: sourceLanguage.id
+  });
   sendJson(response, 200, token);
 }
 
 async function handleAttemptRequest(request, requestUrl, response) {
+  const authContext = requireAuthContext(request);
   const sentenceId = requestUrl.searchParams.get("id");
   const sentence = findSentence(sentenceId);
   const sourceLanguage = getSourceLanguageOption(requestUrl.searchParams.get("language"));
@@ -662,11 +874,13 @@ async function handleAttemptRequest(request, requestUrl, response) {
 
   const mimeType = getMimeType(request);
   let transcript = "";
+  let inputMethod = "audio";
 
   if (mimeType === "application/json") {
     const bodyBuffer = await readRequestBody(request, MAX_JSON_BYTES);
     const parsedBody = JSON.parse(bodyBuffer.toString("utf8"));
     transcript = String(parsedBody.attemptText || "").trim();
+    inputMethod = "typed";
 
     if (!transcript) {
       throw createHttpError(400, "Typed English answer is missing.");
@@ -685,6 +899,13 @@ async function handleAttemptRequest(request, requestUrl, response) {
   }
 
   const evaluation = await gradeAttempt(sentence, transcript, sourceLanguage.id);
+  recordUsageEvent(authContext.userId, "attempt_submitted", {
+    inputMethod,
+    passed: Boolean(evaluation.passed),
+    verdict: evaluation.verdict,
+    language: sourceLanguage.id,
+    difficulty: getSentenceDifficultyId(sentence)
+  });
 
   sendJson(response, 200, {
     sentenceId,
@@ -738,13 +959,48 @@ const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
 
   try {
+    if (request.method === "GET" && requestUrl.pathname === "/api/auth/session") {
+      await handleSessionRequest(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/guest") {
+      await handleGuestLoginRequest(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/otp/request") {
+      await handleOtpRequestRequest(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/otp/verify") {
+      await handleOtpVerifyRequest(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/logout") {
+      await handleLogoutRequest(request, response);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/stats") {
+      await handleStatsRequest(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/track") {
+      await handleTrackRequest(request, response);
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/api/lesson") {
-      await handleLessonRequest(requestUrl, response);
+      await handleLessonRequest(request, requestUrl, response);
       return;
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/api/tts") {
-      await handleTextToSpeechRequest(requestUrl, response);
+      await handleTextToSpeechRequest(request, requestUrl, response);
       return;
     }
 
@@ -754,10 +1010,10 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (
-      request.method === "POST" &&
+      request.method === "GET" &&
       requestUrl.pathname === "/api/realtime-transcription/token"
     ) {
-      await handleRealtimeTranscriptionTokenRequest(requestUrl, response);
+      await handleRealtimeTranscriptionTokenRequest(request, requestUrl, response);
       return;
     }
 

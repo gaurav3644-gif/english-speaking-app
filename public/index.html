@@ -13,7 +13,123 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="app-shell" id="appShell">
+      <div class="auth-overlay" id="authOverlay" hidden>
+        <div class="auth-panel">
+          <div class="auth-panel-copy">
+            <p class="section-kicker">Sign in</p>
+            <h2>Log in before you start practicing</h2>
+            <p class="hero-text auth-intro-text">
+              Use guest access with your name and location, or request a one-time OTP.
+              After login, the full practice studio and usage tracking are unlocked.
+            </p>
+          </div>
+
+          <div class="auth-mode-toggle">
+            <button
+              class="button subtle auth-mode-button is-active"
+              id="guestModeButton"
+              type="button"
+            >
+              Guest access
+            </button>
+            <button class="button subtle auth-mode-button" id="otpModeButton" type="button">
+              OTP login
+            </button>
+          </div>
+
+          <form class="auth-form" id="guestLoginForm">
+            <label class="auth-field" for="guestNameInput">
+              <span>Your name</span>
+              <input
+                class="auth-input"
+                id="guestNameInput"
+                type="text"
+                autocomplete="name"
+                placeholder="Enter your name"
+              />
+            </label>
+            <label class="auth-field" for="guestLocationInput">
+              <span>Location</span>
+              <input
+                class="auth-input"
+                id="guestLocationInput"
+                type="text"
+                autocomplete="address-level2"
+                placeholder="City or area"
+              />
+            </label>
+            <button class="button primary auth-submit" id="guestLoginButton" type="submit">
+              Continue as guest
+            </button>
+          </form>
+
+          <form class="auth-form" id="otpLoginForm" hidden>
+            <label class="auth-field" for="otpContactInput">
+              <span>Phone or email</span>
+              <input
+                class="auth-input"
+                id="otpContactInput"
+                type="text"
+                autocomplete="username"
+                placeholder="Phone number or email"
+              />
+            </label>
+
+            <div class="auth-inline-grid">
+              <label class="auth-field" for="otpNameInput">
+                <span>Name</span>
+                <input
+                  class="auth-input"
+                  id="otpNameInput"
+                  type="text"
+                  autocomplete="name"
+                  placeholder="Optional name"
+                />
+              </label>
+              <label class="auth-field" for="otpLocationInput">
+                <span>Location</span>
+                <input
+                  class="auth-input"
+                  id="otpLocationInput"
+                  type="text"
+                  autocomplete="address-level2"
+                  placeholder="Optional location"
+                />
+              </label>
+            </div>
+
+            <div class="auth-request-row">
+              <button class="button secondary auth-inline-button" id="requestOtpButton" type="button">
+                Request OTP
+              </button>
+              <label class="auth-field auth-code-field" for="otpCodeInput">
+                <span>OTP code</span>
+                <input
+                  class="auth-input"
+                  id="otpCodeInput"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                  placeholder="Enter code"
+                />
+              </label>
+            </div>
+
+            <button class="button primary auth-submit" id="verifyOtpButton" type="submit">
+              Verify OTP
+            </button>
+            <p class="auth-helper" id="otpHelperText">
+              OTP codes are logged by the server in this build. Replace that with SMS or
+              email delivery before using it for production traffic.
+            </p>
+          </form>
+
+          <p class="auth-status" id="authStatusText">Sign in to unlock the practice studio.</p>
+        </div>
+      </div>
+
       <header class="hero-section">
         <div class="hero-copy">
           <div class="brand-row">
@@ -24,9 +140,24 @@
                 <span>English speaking practice</span>
               </span>
             </a>
-            <div class="hero-nav">
-              <span class="hero-nav-pill">Live transcript</span>
-              <span class="hero-nav-pill">AI speaking coach</span>
+            <div class="brand-actions">
+              <div class="hero-nav">
+                <span class="hero-nav-pill">Live transcript</span>
+                <span class="hero-nav-pill">AI speaking coach</span>
+              </div>
+              <div class="session-summary" id="sessionSummary" hidden>
+                <div class="session-summary-copy">
+                  <strong id="sessionUserName">Guest user</strong>
+                  <span id="sessionUserMeta">Signed in</span>
+                </div>
+                <button
+                  class="button ghost session-logout-button"
+                  id="logoutButton"
+                  type="button"
+                >
+                  Log out
+                </button>
+              </div>
             </div>
           </div>
 
@@ -204,6 +335,62 @@
               <p class="score-value score-verdict" id="verdictValue">Waiting</p>
             </article>
           </div>
+
+          <article class="workspace-card usage-card">
+            <div class="workspace-card-head">
+              <p class="card-kicker">Usage insights</p>
+              <span>Current user and app-wide activity</span>
+            </div>
+            <p class="usage-user-meta" id="usageUserMeta">
+              Sign in to load your usage and app activity metrics.
+            </p>
+            <div class="usage-metric-grid">
+              <article class="usage-metric">
+                <span>Logins</span>
+                <strong id="userLoginsMetric">0</strong>
+              </article>
+              <article class="usage-metric">
+                <span>Lessons</span>
+                <strong id="userLessonsMetric">0</strong>
+              </article>
+              <article class="usage-metric">
+                <span>Attempts</span>
+                <strong id="userAttemptsMetric">0</strong>
+              </article>
+              <article class="usage-metric">
+                <span>Correct</span>
+                <strong id="userCorrectMetric">0</strong>
+              </article>
+            </div>
+            <div class="usage-window-grid">
+              <article class="usage-window">
+                <p class="usage-window-title">Today</p>
+                <p class="usage-window-value" id="todayUsageValue">0 attempts</p>
+                <p class="usage-window-meta" id="todayUsageMeta">0 users | 0 lessons | 0 logins</p>
+              </article>
+              <article class="usage-window">
+                <p class="usage-window-title">This week</p>
+                <p class="usage-window-value" id="weekUsageValue">0 attempts</p>
+                <p class="usage-window-meta" id="weekUsageMeta">0 users | 0 lessons | 0 logins</p>
+              </article>
+              <article class="usage-window">
+                <p class="usage-window-title">This month</p>
+                <p class="usage-window-value" id="monthUsageValue">0 attempts</p>
+                <p class="usage-window-meta" id="monthUsageMeta">0 users | 0 lessons | 0 logins</p>
+              </article>
+              <article class="usage-window">
+                <p class="usage-window-title">All time</p>
+                <p class="usage-window-value" id="allTimeUsageValue">0 attempts</p>
+                <p class="usage-window-meta" id="allTimeUsageMeta">0 users | 0 lessons | 0 logins</p>
+              </article>
+            </div>
+            <div class="usage-user-list">
+              <p class="usage-list-title">Most active users</p>
+              <div class="usage-leaderboard" id="usageLeaderboard">
+                <p class="usage-leaderboard-empty">No usage data yet.</p>
+              </div>
+            </div>
+          </article>
 
           <div class="status-box" id="statusBox">
             <p class="status-label">Status</p>

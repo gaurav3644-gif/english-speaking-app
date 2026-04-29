@@ -1,8 +1,14 @@
 const state = {
+  isAuthenticated: false,
+  isAuthBusy: false,
+  authMode: "guest",
+  sessionUser: null,
+  otpChallengeId: "",
   lesson: [],
   currentIndex: 0,
   correctCount: 0,
   completedCount: 0,
+  hasTrackedLessonCompletion: false,
   isSubmitting: false,
   isRecording: false,
   isFinalizingRecording: false,
@@ -33,6 +39,41 @@ const state = {
 };
 
 const elements = {
+  appShell: document.querySelector("#appShell"),
+  authOverlay: document.querySelector("#authOverlay"),
+  guestModeButton: document.querySelector("#guestModeButton"),
+  otpModeButton: document.querySelector("#otpModeButton"),
+  guestLoginForm: document.querySelector("#guestLoginForm"),
+  guestNameInput: document.querySelector("#guestNameInput"),
+  guestLocationInput: document.querySelector("#guestLocationInput"),
+  guestLoginButton: document.querySelector("#guestLoginButton"),
+  otpLoginForm: document.querySelector("#otpLoginForm"),
+  otpContactInput: document.querySelector("#otpContactInput"),
+  otpNameInput: document.querySelector("#otpNameInput"),
+  otpLocationInput: document.querySelector("#otpLocationInput"),
+  requestOtpButton: document.querySelector("#requestOtpButton"),
+  otpCodeInput: document.querySelector("#otpCodeInput"),
+  verifyOtpButton: document.querySelector("#verifyOtpButton"),
+  otpHelperText: document.querySelector("#otpHelperText"),
+  authStatusText: document.querySelector("#authStatusText"),
+  sessionSummary: document.querySelector("#sessionSummary"),
+  sessionUserName: document.querySelector("#sessionUserName"),
+  sessionUserMeta: document.querySelector("#sessionUserMeta"),
+  logoutButton: document.querySelector("#logoutButton"),
+  usageUserMeta: document.querySelector("#usageUserMeta"),
+  usageLeaderboard: document.querySelector("#usageLeaderboard"),
+  userLoginsMetric: document.querySelector("#userLoginsMetric"),
+  userLessonsMetric: document.querySelector("#userLessonsMetric"),
+  userAttemptsMetric: document.querySelector("#userAttemptsMetric"),
+  userCorrectMetric: document.querySelector("#userCorrectMetric"),
+  todayUsageValue: document.querySelector("#todayUsageValue"),
+  todayUsageMeta: document.querySelector("#todayUsageMeta"),
+  weekUsageValue: document.querySelector("#weekUsageValue"),
+  weekUsageMeta: document.querySelector("#weekUsageMeta"),
+  monthUsageValue: document.querySelector("#monthUsageValue"),
+  monthUsageMeta: document.querySelector("#monthUsageMeta"),
+  allTimeUsageValue: document.querySelector("#allTimeUsageValue"),
+  allTimeUsageMeta: document.querySelector("#allTimeUsageMeta"),
   progressLabel: document.querySelector("#progressLabel"),
   lessonMeta: document.querySelector("#lessonMeta"),
   practiceTitle: document.querySelector("#practiceTitle"),
@@ -115,6 +156,306 @@ const SOURCE_LANGUAGE_UI = {
     }
   }
 };
+
+function pluralize(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const parsedValue = new Date(value);
+  if (Number.isNaN(parsedValue.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(parsedValue);
+}
+
+function setWorkspaceLocked(isLocked) {
+  document.body.classList.toggle("auth-locked", isLocked);
+  elements.appShell?.classList.toggle("is-locked", isLocked);
+
+  if (elements.authOverlay) {
+    elements.authOverlay.hidden = !isLocked;
+  }
+}
+
+function setAuthStatus(message, tone = "neutral") {
+  if (!elements.authStatusText) {
+    return;
+  }
+
+  elements.authStatusText.textContent = message;
+  elements.authStatusText.classList.remove("is-success", "is-danger");
+
+  if (tone === "success") {
+    elements.authStatusText.classList.add("is-success");
+  } else if (tone === "danger") {
+    elements.authStatusText.classList.add("is-danger");
+  }
+}
+
+function setAuthBusy(isBusy) {
+  state.isAuthBusy = Boolean(isBusy);
+
+  const authControls = [
+    elements.guestModeButton,
+    elements.otpModeButton,
+    elements.guestNameInput,
+    elements.guestLocationInput,
+    elements.guestLoginButton,
+    elements.otpContactInput,
+    elements.otpNameInput,
+    elements.otpLocationInput,
+    elements.requestOtpButton,
+    elements.otpCodeInput,
+    elements.verifyOtpButton
+  ];
+
+  for (const control of authControls) {
+    if (control) {
+      control.disabled = state.isAuthBusy;
+    }
+  }
+}
+
+function setAuthMode(mode) {
+  const normalizedMode = mode === "otp" ? "otp" : "guest";
+  state.authMode = normalizedMode;
+
+  elements.guestModeButton?.classList.toggle("is-active", normalizedMode === "guest");
+  elements.otpModeButton?.classList.toggle("is-active", normalizedMode === "otp");
+
+  if (elements.guestLoginForm) {
+    elements.guestLoginForm.hidden = normalizedMode !== "guest";
+  }
+
+  if (elements.otpLoginForm) {
+    elements.otpLoginForm.hidden = normalizedMode !== "otp";
+  }
+}
+
+function updateSessionSummary() {
+  const user = state.sessionUser;
+  const isVisible = state.isAuthenticated && Boolean(user);
+
+  if (elements.sessionSummary) {
+    elements.sessionSummary.hidden = !isVisible;
+  }
+
+  if (!isVisible) {
+    return;
+  }
+
+  if (elements.sessionUserName) {
+    elements.sessionUserName.textContent = user.name || "Signed-in user";
+  }
+
+  if (elements.sessionUserMeta) {
+    const metaParts = [];
+    if (user.location) {
+      metaParts.push(user.location);
+    }
+    if (user.contactMasked) {
+      metaParts.push(user.contactMasked);
+    }
+    if (!metaParts.length) {
+      metaParts.push("Guest session");
+    }
+    elements.sessionUserMeta.textContent = metaParts.join(" | ");
+  }
+}
+
+function setUsageWindow(valueElement, metaElement, summary) {
+  if (valueElement) {
+    valueElement.textContent = pluralize(Number(summary?.attempts || 0), "attempt");
+  }
+
+  if (metaElement) {
+    metaElement.textContent =
+      `${pluralize(Number(summary?.activeUsers || 0), "user")} | ` +
+      `${pluralize(Number(summary?.lessonsLoaded || 0), "lesson")} | ` +
+      `${pluralize(Number(summary?.logins || 0), "login")}`;
+  }
+}
+
+function renderUsageLeaderboard(topUsers = []) {
+  if (!elements.usageLeaderboard) {
+    return;
+  }
+
+  if (!Array.isArray(topUsers) || !topUsers.length) {
+    elements.usageLeaderboard.innerHTML =
+      '<p class="usage-leaderboard-empty">No usage data yet.</p>';
+    return;
+  }
+
+  elements.usageLeaderboard.innerHTML = topUsers
+    .map((user, index) => {
+      const metaParts = [];
+      if (user.location) {
+        metaParts.push(user.location);
+      }
+      if (user.contactMasked) {
+        metaParts.push(user.contactMasked);
+      }
+
+      const summaryText =
+        `${pluralize(Number(user.usage?.attempts || 0), "attempt")} | ` +
+        `${pluralize(Number(user.usage?.lessonsLoaded || 0), "lesson")} | ` +
+        `${pluralize(Number(user.usage?.logins || 0), "login")}`;
+
+      return `
+        <article class="usage-leaderboard-item">
+          <div class="usage-leaderboard-rank">${index + 1}</div>
+          <div class="usage-leaderboard-copy">
+            <strong>${user.name || "Unnamed user"}</strong>
+            <span>${metaParts.join(" | ") || "Guest or OTP user"}</span>
+          </div>
+          <p class="usage-leaderboard-summary">${summaryText}</p>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function resetUsageDashboard() {
+  if (elements.usageUserMeta) {
+    elements.usageUserMeta.textContent = "Sign in to load your usage and app activity metrics.";
+  }
+
+  if (elements.userLoginsMetric) {
+    elements.userLoginsMetric.textContent = "0";
+  }
+  if (elements.userLessonsMetric) {
+    elements.userLessonsMetric.textContent = "0";
+  }
+  if (elements.userAttemptsMetric) {
+    elements.userAttemptsMetric.textContent = "0";
+  }
+  if (elements.userCorrectMetric) {
+    elements.userCorrectMetric.textContent = "0";
+  }
+
+  setUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, {});
+  setUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, {});
+  setUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, {});
+  setUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, {});
+  renderUsageLeaderboard([]);
+}
+
+function renderUsageDashboard(dashboard) {
+  const currentUser = dashboard?.currentUser || {};
+  const usage = currentUser.usage || {};
+
+  if (elements.usageUserMeta) {
+    const metaParts = [];
+    if (currentUser.name) {
+      metaParts.push(currentUser.name);
+    }
+    if (currentUser.location) {
+      metaParts.push(currentUser.location);
+    }
+    if (currentUser.lastLoginAt) {
+      metaParts.push(`Last login ${formatDateTime(currentUser.lastLoginAt)}`);
+    }
+    elements.usageUserMeta.textContent = metaParts.join(" | ") || "Usage dashboard loaded.";
+  }
+
+  if (elements.userLoginsMetric) {
+    elements.userLoginsMetric.textContent = String(usage.logins || 0);
+  }
+  if (elements.userLessonsMetric) {
+    elements.userLessonsMetric.textContent = String(usage.lessonsLoaded || 0);
+  }
+  if (elements.userAttemptsMetric) {
+    elements.userAttemptsMetric.textContent = String(usage.attempts || 0);
+  }
+  if (elements.userCorrectMetric) {
+    elements.userCorrectMetric.textContent = String(usage.correctAttempts || 0);
+  }
+
+  setUsageWindow(elements.todayUsageValue, elements.todayUsageMeta, dashboard?.overall?.today);
+  setUsageWindow(elements.weekUsageValue, elements.weekUsageMeta, dashboard?.overall?.week);
+  setUsageWindow(elements.monthUsageValue, elements.monthUsageMeta, dashboard?.overall?.month);
+  setUsageWindow(elements.allTimeUsageValue, elements.allTimeUsageMeta, dashboard?.overall?.allTime);
+  renderUsageLeaderboard(dashboard?.topUsers);
+}
+
+function resetSignedOutWorkspace() {
+  stopPlayback();
+  cleanupRecordingResources();
+  clearNarrationCache();
+  clearTimeout(state.autoAdvanceTimer);
+  state.lesson = [];
+  state.currentIndex = 0;
+  state.correctCount = 0;
+  state.completedCount = 0;
+  state.hasTrackedLessonCompletion = false;
+  state.hasOpenAiKey = false;
+  state.isSubmitting = false;
+  state.isRecording = false;
+  state.isFinalizingRecording = false;
+  state.currentIdealAnswer = "";
+  state.isIdealAnswerVisible = false;
+
+  if (elements.lessonMeta) {
+    elements.lessonMeta.textContent = "Sign in to load a lesson.";
+  }
+
+  if (elements.sourceSentence) {
+    elements.sourceSentence.textContent = "Sign in to unlock the practice studio.";
+  }
+
+  if (elements.sentenceTag) {
+    elements.sentenceTag.textContent = "Authentication required.";
+  }
+
+  if (elements.verdictValue) {
+    elements.verdictValue.textContent = "Locked";
+  }
+
+  if (elements.transcriptText) {
+    elements.transcriptText.textContent = "Sign in to see the transcript.";
+  }
+
+  if (elements.feedbackText) {
+    elements.feedbackText.textContent = "Sign in to receive AI feedback.";
+  }
+
+  if (elements.typedAnswer) {
+    elements.typedAnswer.value = "";
+  }
+
+  updateCounters();
+  updateProgressLabel();
+  renderIdealAnswer();
+  syncControlState();
+}
+
+function setAuthenticatedSession(sessionPayload) {
+  const isAuthenticated = Boolean(sessionPayload?.authenticated);
+  state.isAuthenticated = isAuthenticated;
+  state.sessionUser = isAuthenticated ? sessionPayload.user || null : null;
+  state.otpChallengeId = "";
+  updateSessionSummary();
+
+  if (isAuthenticated) {
+    setWorkspaceLocked(false);
+    setAuthStatus("");
+    return;
+  }
+
+  resetUsageDashboard();
+  resetSignedOutWorkspace();
+  setWorkspaceLocked(true);
+}
 
 function currentSentence() {
   return state.lesson[state.currentIndex] || null;
@@ -209,21 +550,23 @@ function syncRecordButton() {
 }
 
 function syncControlState() {
-  const hasSentence = Boolean(currentSentence());
+  const hasSentence = state.isAuthenticated && Boolean(currentSentence());
   const controlsLocked = state.isSubmitting || state.isRecording || state.isFinalizingRecording;
+  const authLocked = !state.isAuthenticated;
 
-  elements.playButton.disabled = controlsLocked || !hasSentence;
-  elements.skipButton.disabled = controlsLocked || !hasSentence;
-  elements.submitTypedButton.disabled = controlsLocked || !hasSentence;
-  elements.newLessonButton.disabled = controlsLocked;
-  elements.sourceLanguageSelect.disabled = controlsLocked;
-  elements.difficultySelect.disabled = controlsLocked;
-  elements.typedAnswer.disabled = controlsLocked || !hasSentence;
+  elements.playButton.disabled = authLocked || controlsLocked || !hasSentence;
+  elements.skipButton.disabled = authLocked || controlsLocked || !hasSentence;
+  elements.submitTypedButton.disabled = authLocked || controlsLocked || !hasSentence;
+  elements.newLessonButton.disabled = authLocked || controlsLocked;
+  elements.sourceLanguageSelect.disabled = authLocked || controlsLocked;
+  elements.difficultySelect.disabled = authLocked || controlsLocked;
+  elements.typedAnswer.disabled = authLocked || controlsLocked || !hasSentence;
   if (elements.revealIdealAnswerButton) {
-    elements.revealIdealAnswerButton.disabled = controlsLocked || !state.currentIdealAnswer;
+    elements.revealIdealAnswerButton.disabled =
+      authLocked || controlsLocked || !state.currentIdealAnswer;
   }
   elements.recordButton.disabled =
-    !hasSentence || state.isFinalizingRecording || (state.isSubmitting && !state.isRecording);
+    authLocked || !hasSentence || state.isFinalizingRecording || (state.isSubmitting && !state.isRecording);
 
   syncRecordButton();
 }
@@ -293,6 +636,14 @@ function renderSentence() {
   updateSourceLanguageUi(sentence?.sourceLanguage || state.selectedSourceLanguage);
 
   if (!sentence) {
+    if (state.isAuthenticated && !state.hasTrackedLessonCompletion) {
+      state.hasTrackedLessonCompletion = true;
+      void trackUsageEvent("lesson_completed", {
+        correctCount: state.correctCount,
+        completedCount: state.completedCount
+      }, { refreshStats: true });
+    }
+
     elements.sourceSentence.textContent = "Lesson complete";
     elements.sentenceTag.textContent = "Start a new lesson to practice again.";
     elements.verdictValue.textContent = getSourceLanguageMeta().doneVerdict;
@@ -315,11 +666,12 @@ function renderSentence() {
   primeNarrationAroundCurrentSentence();
 }
 
-async function fetchJson(url, options) {
+async function fetchJson(url, options = {}) {
+  const { suppressUnauthorizedReset = false, ...fetchOptions } = options;
   let response;
 
   try {
-    response = await fetch(url, options);
+    response = await fetch(url, fetchOptions);
   } catch (error) {
     const rawMessage = String(error?.message || "").trim().toLowerCase();
     if (rawMessage.includes("failed to fetch") || rawMessage.includes("fetch failed")) {
@@ -331,11 +683,232 @@ async function fetchJson(url, options) {
 
   const payload = await response.json().catch(() => ({}));
 
+  if (response.status === 401) {
+    if (!suppressUnauthorizedReset) {
+      setAuthenticatedSession(null);
+      setAuthStatus(payload.error || "Session expired. Sign in again.", "danger");
+      setStatus(payload.error || "Session expired. Sign in again.", "warning");
+    }
+    throw new Error(payload.error || "Sign in to continue.");
+  }
+
   if (!response.ok) {
     throw new Error(payload.error || "Request failed.");
   }
 
   return payload;
+}
+
+async function trackUsageEvent(type, metadata = {}, options = {}) {
+  const { refreshStats = false } = options;
+  if (!state.isAuthenticated) {
+    return;
+  }
+
+  let response;
+
+  try {
+    response = await fetch("/api/track", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        type,
+        metadata
+      })
+    });
+  } catch {
+    return;
+  }
+
+  if (response.status === 401) {
+    setAuthenticatedSession(null);
+    setAuthStatus("Session expired. Sign in again.", "danger");
+    setStatus("Session expired. Sign in again.", "warning");
+    return;
+  }
+
+  if (response.ok && refreshStats) {
+    void loadUsageDashboard();
+  }
+}
+
+async function loadUsageDashboard() {
+  if (!state.isAuthenticated) {
+    resetUsageDashboard();
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/stats", { cache: "no-store" });
+    renderUsageDashboard(payload);
+  } catch (error) {
+    if (state.isAuthenticated) {
+      setStatus(error.message, "warning");
+    }
+  }
+}
+
+async function handleAuthenticatedStart(sessionPayload, successMessage) {
+  setAuthenticatedSession(sessionPayload);
+  await loadUsageDashboard();
+  setStatus(successMessage || "Signed in. Loading your lesson...", "success");
+  await loadLesson();
+}
+
+async function submitGuestLogin(event) {
+  event.preventDefault();
+  if (state.isAuthBusy) {
+    return;
+  }
+
+  const name = elements.guestNameInput?.value.trim() || "";
+  const location = elements.guestLocationInput?.value.trim() || "";
+
+  setAuthBusy(true);
+  setAuthStatus("Signing you in as a guest...");
+
+  try {
+    const payload = await fetchJson("/api/auth/guest", {
+      suppressUnauthorizedReset: true,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name,
+        location
+      })
+    });
+    await handleAuthenticatedStart(payload, "Guest session ready. Loading your first lesson...");
+  } catch (error) {
+    setAuthStatus(error.message, "danger");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function requestOtp() {
+  if (state.isAuthBusy) {
+    return;
+  }
+
+  const contact = elements.otpContactInput?.value.trim() || "";
+  const name = elements.otpNameInput?.value.trim() || "";
+  const location = elements.otpLocationInput?.value.trim() || "";
+
+  setAuthBusy(true);
+  setAuthStatus("Requesting your OTP...");
+
+  try {
+    const payload = await fetchJson("/api/auth/otp/request", {
+      suppressUnauthorizedReset: true,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contact,
+        name,
+        location
+      })
+    });
+    state.otpChallengeId = String(payload.challengeId || "").trim();
+
+    if (elements.otpHelperText) {
+      const helperParts = [payload.message || "OTP generated."];
+      if (payload.devCode) {
+        helperParts.push(`Dev OTP: ${payload.devCode}`);
+      }
+      elements.otpHelperText.textContent = helperParts.join(" ");
+    }
+
+    setAuthStatus("OTP generated. Check the server log, then enter the code here.", "success");
+    elements.otpCodeInput?.focus();
+  } catch (error) {
+    setAuthStatus(error.message, "danger");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function verifyOtpLogin(event) {
+  event.preventDefault();
+  if (state.isAuthBusy) {
+    return;
+  }
+
+  const contact = elements.otpContactInput?.value.trim() || "";
+  const name = elements.otpNameInput?.value.trim() || "";
+  const location = elements.otpLocationInput?.value.trim() || "";
+  const code = elements.otpCodeInput?.value.trim() || "";
+
+  setAuthBusy(true);
+  setAuthStatus("Verifying your OTP...");
+
+  try {
+    const payload = await fetchJson("/api/auth/otp/verify", {
+      suppressUnauthorizedReset: true,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        challengeId: state.otpChallengeId,
+        contact,
+        name,
+        location,
+        code
+      })
+    });
+    await handleAuthenticatedStart(payload, "OTP verified. Loading your first lesson...");
+  } catch (error) {
+    setAuthStatus(error.message, "danger");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function logoutCurrentUser() {
+  if (state.isAuthBusy) {
+    return;
+  }
+
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST"
+    });
+  } catch {
+    // Ignore network teardown issues and clear the local session state anyway.
+  }
+
+  setAuthenticatedSession(null);
+  setAuthMode("guest");
+  setAuthStatus("Signed out. Sign in again to continue.", "success");
+  setStatus("Sign in to continue.", "warning");
+}
+
+async function restoreSessionOrLockApp() {
+  setWorkspaceLocked(true);
+  resetUsageDashboard();
+  setAuthStatus("Checking your existing session...");
+
+  try {
+    const payload = await fetchJson("/api/auth/session", { cache: "no-store" });
+    if (!payload?.authenticated) {
+      setAuthenticatedSession(null);
+      setAuthStatus("Sign in to unlock the practice studio.");
+      setStatus("Sign in to continue.", "warning");
+      return;
+    }
+
+    await handleAuthenticatedStart(payload, "Session restored. Loading your lesson...");
+  } catch (error) {
+    setAuthenticatedSession(null);
+    setAuthStatus(error.message, "danger");
+    setStatus("Sign in to continue.", "warning");
+  }
 }
 
 function stopPlayback() {
@@ -1367,6 +1940,7 @@ async function submitAttempt(options) {
     setStatus(error.message, "danger");
   } finally {
     setBusyState(false);
+    void loadUsageDashboard();
   }
 }
 
@@ -1405,6 +1979,7 @@ async function startUploadRecording() {
 
     state.mediaRecorder.start();
     state.isRecording = true;
+    void trackUsageEvent("recording_started", { mode: "upload" }, { refreshStats: true });
     const hasPreview = startBrowserInterimTranscript();
     syncControlState();
     elements.transcriptText.textContent = hasPreview
@@ -1476,6 +2051,7 @@ async function startLiveRecording() {
   await waitForDataChannelOpen(dataChannel);
 
   state.isRecording = true;
+  void trackUsageEvent("recording_started", { mode: "live" }, { refreshStats: true });
   const hasPreview = startBrowserInterimTranscript();
   syncControlState();
   startLiveCommitLoop();
@@ -1611,6 +2187,11 @@ function advanceSentence() {
 }
 
 async function loadLesson() {
+  if (!state.isAuthenticated) {
+    setStatus("Sign in to continue.", "warning");
+    return;
+  }
+
   stopPlayback();
   clearNarrationCache();
   clearTimeout(state.autoAdvanceTimer);
@@ -1619,6 +2200,7 @@ async function loadLesson() {
   state.correctCount = 0;
   state.completedCount = 0;
   state.currentIndex = 0;
+  state.hasTrackedLessonCompletion = false;
   syncControlState();
   setBusyState(true);
 
@@ -1668,6 +2250,7 @@ async function loadLesson() {
       `${difficultyLabel} ${sourceLanguageLabel} lesson ready. Listen carefully, then answer in English.`,
       "neutral"
     );
+    void loadUsageDashboard();
     shouldAutoPlaySentence = Boolean(currentSentence());
   } catch (error) {
     state.lesson = [];
@@ -1701,11 +2284,42 @@ elements.playButton.addEventListener("click", () => {
   void playCurrentSentence({ preferImmediate: true });
 });
 
+elements.guestModeButton?.addEventListener("click", () => {
+  if (!state.isAuthBusy) {
+    setAuthMode("guest");
+    setAuthStatus("Sign in with your name and location to continue.");
+  }
+});
+
+elements.otpModeButton?.addEventListener("click", () => {
+  if (!state.isAuthBusy) {
+    setAuthMode("otp");
+    setAuthStatus("Request a one-time code to continue.");
+  }
+});
+
+elements.guestLoginForm?.addEventListener("submit", (event) => {
+  void submitGuestLogin(event);
+});
+
+elements.requestOtpButton?.addEventListener("click", () => {
+  void requestOtp();
+});
+
+elements.otpLoginForm?.addEventListener("submit", (event) => {
+  void verifyOtpLogin(event);
+});
+
+elements.logoutButton?.addEventListener("click", () => {
+  void logoutCurrentUser();
+});
+
 elements.skipButton.addEventListener("click", () => {
   if (state.isSubmitting || state.isRecording || state.isFinalizingRecording) {
     return;
   }
 
+  void trackUsageEvent("sentence_skipped", { sentenceId: currentSentence()?.id || "" }, { refreshStats: true });
   state.completedCount += 1;
   updateCounters();
   setStatus("Sentence skipped. Moving to the next one.", "warning");
@@ -1755,4 +2369,6 @@ window.addEventListener("beforeunload", () => {
 
 syncControlState();
 updateSourceLanguageUi(state.selectedSourceLanguage);
-void loadLesson();
+setAuthMode("guest");
+setAuthenticatedSession(null);
+void restoreSessionOrLockApp();
