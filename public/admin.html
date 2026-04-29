@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GuruSpeaking Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="admin-page">
+    <div class="app-shell admin-shell">
+      <header class="hero admin-header">
+        <div class="hero-topbar">
+          <a class="brand" href="/">
+            <span class="brand-mark">G</span>
+            <span class="brand-text">
+              <strong>GuruSpeaking</strong>
+              <span>Admin dashboard</span>
+            </span>
+          </a>
+          <div class="brand-actions admin-header-actions">
+            <a class="button subtle" href="/">Main app</a>
+            <button class="button ghost" id="adminLogoutButton" type="button">Log out</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="workspace-card admin-access-card" id="adminAccessCard">
+        <p class="section-kicker">Admin access</p>
+        <h1 id="adminAccessTitle">Checking access</h1>
+        <p class="hero-text" id="adminAccessMessage">
+          Validating the current session before loading usage analytics.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="/">Go to main app</a>
+        </div>
+      </section>
+
+      <main class="admin-dashboard" id="adminDashboard" hidden>
+        <section class="workspace-card admin-intro-card">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Admin overview</p>
+              <h2>Usage across the full app</h2>
+            </div>
+            <p class="hero-text admin-generated-at" id="adminGeneratedAt">Loading latest totals...</p>
+          </div>
+          <p class="hero-text" id="adminSessionMeta">
+            Signed in admin session details will appear here.
+          </p>
+          <div class="usage-metric-grid">
+            <article class="usage-metric">
+              <span class="score-label">Users</span>
+              <strong id="totalUsersValue">0</strong>
+            </article>
+            <article class="usage-metric">
+              <span class="score-label">Active sessions</span>
+              <strong id="activeSessionsValue">0</strong>
+            </article>
+            <article class="usage-metric">
+              <span class="score-label">Pending OTP</span>
+              <strong id="pendingOtpValue">0</strong>
+            </article>
+            <article class="usage-metric">
+              <span class="score-label">Stored events</span>
+              <strong id="storedEventsValue">0</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Overall usage</p>
+              <h2>Traffic by time window</h2>
+            </div>
+          </div>
+          <div class="usage-window-grid">
+            <article class="usage-window">
+              <span class="usage-window-title">Today</span>
+              <p class="usage-window-value" id="todayUsageValue">0 attempts</p>
+              <span class="usage-leaderboard-summary" id="todayUsageMeta">0 users | 0 lessons | 0 logins</span>
+            </article>
+            <article class="usage-window">
+              <span class="usage-window-title">This week</span>
+              <p class="usage-window-value" id="weekUsageValue">0 attempts</p>
+              <span class="usage-leaderboard-summary" id="weekUsageMeta">0 users | 0 lessons | 0 logins</span>
+            </article>
+            <article class="usage-window">
+              <span class="usage-window-title">This month</span>
+              <p class="usage-window-value" id="monthUsageValue">0 attempts</p>
+              <span class="usage-leaderboard-summary" id="monthUsageMeta">0 users | 0 lessons | 0 logins</span>
+            </article>
+            <article class="usage-window">
+              <span class="usage-window-title">All time</span>
+              <p class="usage-window-value" id="allTimeUsageValue">0 attempts</p>
+              <span class="usage-leaderboard-summary" id="allTimeUsageMeta">0 users | 0 lessons | 0 logins</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Per-user usage</p>
+              <h2>All users</h2>
+            </div>
+            <p class="hero-text">Sorted by attempts, then lessons, then logins.</p>
+          </div>
+          <div class="admin-users-table-wrap">
+            <table class="admin-users-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Contact</th>
+                  <th>Auth</th>
+                  <th>Logins</th>
+                  <th>Lessons</th>
+                  <th>Attempts</th>
+                  <th>Correct</th>
+                  <th>Last login</th>
+                  <th>Last seen</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTableBody">
+                <tr>
+                  <td colspan="9">Loading users...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Recent activity</p>
+              <h2>Latest events</h2>
+            </div>
+          </div>
+          <div class="admin-events" id="adminEventsList">
+            <p class="usage-leaderboard-empty">Loading recent activity...</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>

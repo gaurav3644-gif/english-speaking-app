@@ -63,6 +63,7 @@ const elements = {
   heroPrimaryButton: document.querySelector("#heroPrimaryButton"),
   sessionUserName: document.querySelector("#sessionUserName"),
   sessionUserMeta: document.querySelector("#sessionUserMeta"),
+  adminPageLink: document.querySelector("#adminPageLink"),
   logoutButton: document.querySelector("#logoutButton"),
   usageUserMeta: document.querySelector("#usageUserMeta"),
   usageLeaderboard: document.querySelector("#usageLeaderboard"),
@@ -297,6 +298,10 @@ function updateSessionSummary() {
 
   if (elements.sessionSummary) {
     elements.sessionSummary.hidden = !isVisible;
+  }
+
+  if (elements.adminPageLink) {
+    elements.adminPageLink.hidden = !user?.isAdmin;
   }
 
   if (!isVisible) {

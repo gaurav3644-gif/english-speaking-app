@@ -8,6 +8,7 @@ const {
   clearSession,
   createGuestSession,
   createOtpChallenge,
+  getAdminDashboard,
   getSessionContext,
   getUsageDashboard,
   recordUsageEvent,
@@ -237,6 +238,15 @@ function requireAuthContext(request) {
   const context = getAuthContext(request);
   if (!context) {
     throw createHttpError(401, "Sign in to continue.");
+  }
+
+  return context;
+}
+
+function requireAdminContext(request) {
+  const context = requireAuthContext(request);
+  if (!context.session?.user?.isAdmin) {
+    throw createHttpError(403, "Admin access is required.");
   }
 
   return context;
@@ -761,6 +771,11 @@ async function handleStatsRequest(request, response) {
   sendJson(response, 200, getUsageDashboard(authContext.userId));
 }
 
+async function handleAdminStatsRequest(request, response) {
+  requireAdminContext(request);
+  sendJson(response, 200, getAdminDashboard());
+}
+
 async function handleTrackRequest(request, response) {
   const authContext = requireAuthContext(request);
   const parsedBody = await readJsonRequestBody(request);
@@ -919,6 +934,10 @@ function getStaticPathname(requestUrl) {
     return path.join(PUBLIC_DIR, "index.html");
   }
 
+  if (requestUrl.pathname === "/admin" || requestUrl.pathname === "/admin/") {
+    return path.join(PUBLIC_DIR, "admin.html");
+  }
+
   const relativePath = requestUrl.pathname.replace(/^[/\\]+/, "");
   return path.resolve(PUBLIC_DIR, relativePath);
 }
@@ -986,6 +1005,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/stats") {
       await handleStatsRequest(request, response);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/stats") {
+      await handleAdminStatsRequest(request, response);
       return;
     }
 

@@ -10,6 +10,7 @@ const OTP_MAX_ATTEMPTS = 5;
 const EVENT_RETENTION_MS = 366 * 24 * 60 * 60 * 1000;
 const MAX_EVENT_COUNT = 50000;
 const OTP_ECHO_TO_RESPONSE = process.env.OTP_ECHO_TO_RESPONSE === "1";
+const DEFAULT_ADMIN_CONTACTS = ["gaurav3644@gmail.com"];
 
 const BASE_USAGE_COUNTERS = Object.freeze({
   logins: 0,
@@ -121,6 +122,46 @@ function normalizeContact(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function getConfiguredAdminContacts() {
+  return new Set(
+    String(process.env.ADMIN_EMAILS || DEFAULT_ADMIN_CONTACTS.join(","))
+      .split(",")
+      .map((value) => normalizeContact(value))
+      .filter(Boolean)
+  );
+}
+
+function isAdminContact(contact) {
+  return getConfiguredAdminContacts().has(normalizeContact(contact));
+}
+
+function buildUserSnapshot(user, options = {}) {
+  const includeUsage = options.includeUsage === true;
+  const includeRawContact = options.includeRawContact === true;
+
+  const snapshot = {
+    id: user.id,
+    name: user.name,
+    location: user.location,
+    contactMasked: sanitizeContact(user.contact),
+    authMethods: [...user.authMethods],
+    isAdmin: isAdminContact(user.contact),
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt,
+    lastSeenAt: user.lastSeenAt
+  };
+
+  if (includeRawContact) {
+    snapshot.contact = String(user.contact || "").trim();
+  }
+
+  if (includeUsage) {
+    snapshot.usage = cloneUsageCounters(user.usage);
+  }
+
+  return snapshot;
+}
+
 function normalizeGuestKey(name, location) {
   return `${normalizeText(name, 80).toLowerCase()}::${normalizeText(location, 80).toLowerCase()}`;
 }
@@ -158,16 +199,7 @@ function sanitizeContact(contact) {
 function buildSessionPayload(user, session) {
   return {
     authenticated: true,
-    user: {
-      id: user.id,
-      name: user.name,
-      location: user.location,
-      contactMasked: sanitizeContact(user.contact),
-      authMethods: [...user.authMethods],
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt,
-      lastSeenAt: user.lastSeenAt
-    },
+    user: buildUserSnapshot(user),
     session: {
       id: session.id,
       createdAt: session.createdAt,
@@ -653,24 +685,9 @@ function getUsageDashboard(userId) {
   }
 
   const dashboard = {
-    currentUser: {
-      name: user.name,
-      location: user.location,
-      contactMasked: sanitizeContact(user.contact),
-      authMethods: [...user.authMethods],
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt,
-      lastSeenAt: user.lastSeenAt,
-      usage: cloneUsageCounters(user.usage)
-    },
+    currentUser: buildUserSnapshot(user, { includeUsage: true }),
     topUsers: store.users
-      .map((entry) => ({
-        name: entry.name,
-        location: entry.location,
-        contactMasked: sanitizeContact(entry.contact),
-        authMethods: [...entry.authMethods],
-        usage: cloneUsageCounters(entry.usage)
-      }))
+      .map((entry) => buildUserSnapshot(entry, { includeUsage: true }))
       .sort((left, right) => {
         const attemptDelta = Number(right.usage.attempts || 0) - Number(left.usage.attempts || 0);
         if (attemptDelta !== 0) {
@@ -698,12 +715,73 @@ function getUsageDashboard(userId) {
   return dashboard;
 }
 
+function summarizeUserRanking(left, right) {
+  const attemptDelta = Number(right.usage?.attempts || 0) - Number(left.usage?.attempts || 0);
+  if (attemptDelta !== 0) {
+    return attemptDelta;
+  }
+
+  const lessonDelta =
+    Number(right.usage?.lessonsLoaded || 0) - Number(left.usage?.lessonsLoaded || 0);
+  if (lessonDelta !== 0) {
+    return lessonDelta;
+  }
+
+  return Number(right.usage?.logins || 0) - Number(left.usage?.logins || 0);
+}
+
+function getAdminDashboard() {
+  const store = loadStore();
+  pruneStore(store);
+
+  const usersById = new Map(store.users.map((entry) => [entry.id, entry]));
+  const users = store.users
+    .map((entry) => buildUserSnapshot(entry, { includeUsage: true, includeRawContact: true }))
+    .sort(summarizeUserRanking);
+
+  const recentEvents = [...store.events]
+    .slice(-80)
+    .reverse()
+    .map((event) => {
+      const user = usersById.get(event.userId);
+      return {
+        id: event.id,
+        type: event.type,
+        timestamp: event.timestamp,
+        metadata: event.metadata && typeof event.metadata === "object" ? { ...event.metadata } : {},
+        user: user ? buildUserSnapshot(user, { includeRawContact: true }) : null
+      };
+    });
+
+  const dashboard = {
+    generatedAt: nowIso(),
+    totals: {
+      users: store.users.length,
+      activeSessions: store.sessions.length,
+      pendingOtpChallenges: store.otpChallenges.length,
+      storedEvents: store.events.length
+    },
+    overall: {
+      today: summarizeEvents(store.events, getStartOfToday()),
+      week: summarizeEvents(store.events, getStartOfWeek()),
+      month: summarizeEvents(store.events, getStartOfMonth()),
+      allTime: summarizeEvents(store.events)
+    },
+    users,
+    recentEvents
+  };
+
+  saveStore(store);
+  return dashboard;
+}
+
 module.exports = {
   OTP_ECHO_TO_RESPONSE,
   SESSION_TTL_SECONDS,
   clearSession,
   createGuestSession,
   createOtpChallenge,
+  getAdminDashboard,
   getSessionContext,
   getUsageDashboard,
   recordUsageEvent,
