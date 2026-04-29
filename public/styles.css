@@ -1340,45 +1340,10 @@ body.auth-modal-open {
   font-size: 0.95rem;
 }
 
-.admin-user-cell span,
-.admin-event-meta,
-.admin-event-time {
+.admin-user-cell span {
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.45;
-}
-
-.admin-events {
-  display: grid;
-  gap: 12px;
-}
-
-.admin-event {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 1.2rem;
-  background: var(--panel);
-}
-
-.admin-event-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.admin-event-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.admin-event-copy strong {
-  font-size: 0.95rem;
-}
-
-.admin-event-copy span {
-  color: var(--ink);
-  font-size: 0.88rem;
 }
 
 .score-grid {
@@ -1566,8 +1531,7 @@ body.auth-modal-open {
   }
 
   .panel-header,
-  .sentence-focus,
-  .admin-event-head {
+  .sentence-focus {
     flex-direction: column;
     align-items: flex-start;
   }

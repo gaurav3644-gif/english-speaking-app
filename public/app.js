@@ -12,6 +12,7 @@ const state = {
   hasTrackedLessonCompletion: false,
   isSubmitting: false,
   isRecording: false,
+  isPreparingRecording: false,
   isFinalizingRecording: false,
   hasOpenAiKey: false,
   selectedSourceLanguage: "indonesian",
@@ -716,13 +717,19 @@ function formatVerdictValue(verdict, score, sourceLanguageId = state.selectedSou
 }
 
 function syncRecordButton() {
-  elements.recordButton.classList.toggle("is-recording", state.isRecording);
-  elements.recordButton.textContent = state.isRecording ? "Stop Recording" : "Start Recording";
+  const isRecordFlowActive = state.isRecording || state.isPreparingRecording;
+  elements.recordButton.classList.toggle("is-recording", isRecordFlowActive);
+  elements.recordButton.textContent = state.isRecording
+    ? "Stop Recording"
+    : state.isPreparingRecording
+      ? "Starting..."
+      : "Start Recording";
 }
 
 function syncControlState() {
   const hasSentence = state.isAuthenticated && Boolean(currentSentence());
-  const controlsLocked = state.isSubmitting || state.isRecording || state.isFinalizingRecording;
+  const controlsLocked =
+    state.isSubmitting || state.isRecording || state.isPreparingRecording || state.isFinalizingRecording;
   const authLocked = !state.isAuthenticated;
 
   elements.playButton.disabled = authLocked || controlsLocked || !hasSentence;
@@ -737,7 +744,11 @@ function syncControlState() {
       authLocked || controlsLocked || !state.currentIdealAnswer;
   }
   elements.recordButton.disabled =
-    authLocked || !hasSentence || state.isFinalizingRecording || (state.isSubmitting && !state.isRecording);
+    authLocked ||
+    !hasSentence ||
+    state.isPreparingRecording ||
+    state.isFinalizingRecording ||
+    (state.isSubmitting && !state.isRecording);
 
   syncRecordButton();
 }
@@ -1534,14 +1545,22 @@ function supportsBrowserInterimTranscript() {
 function scheduleBrowserSpeechRestart() {
   clearBrowserSpeechRestartTimer();
 
-  if (!state.browserSpeechShouldRestart || !state.isRecording || state.isFinalizingRecording) {
+  if (
+    !state.browserSpeechShouldRestart ||
+    (!state.isRecording && !state.isPreparingRecording) ||
+    state.isFinalizingRecording
+  ) {
     return;
   }
 
   state.browserSpeechRestartTimer = window.setTimeout(() => {
     state.browserSpeechRestartTimer = null;
 
-    if (!state.browserSpeechShouldRestart || !state.isRecording || state.isFinalizingRecording) {
+    if (
+      !state.browserSpeechShouldRestart ||
+      (!state.isRecording && !state.isPreparingRecording) ||
+      state.isFinalizingRecording
+    ) {
       return;
     }
 
@@ -1611,7 +1630,7 @@ function startBrowserInterimTranscript() {
       return;
     }
 
-    if (state.isRecording && !state.isFinalizingRecording && errorCode !== "no-speech") {
+    if ((state.isRecording || state.isPreparingRecording) && !state.isFinalizingRecording && errorCode !== "no-speech") {
       setStatus("Live preview paused for a moment. Keep speaking in English.", "warning");
     }
   };
@@ -1680,6 +1699,7 @@ function cleanupRecordingResources() {
   stopMediaStreamTracks();
   state.mediaRecorder = null;
   state.mediaChunks = [];
+  state.isPreparingRecording = false;
   state.isFinalizingRecording = false;
   resetLiveTranscriptState();
 }
@@ -1834,7 +1854,7 @@ function startLiveCommitLoop() {
     }
 
     requestLiveBufferCommit();
-  }, 1200);
+  }, 700);
 }
 
 function parseRealtimeErrorMessage(rawPayload, fallbackMessage) {
@@ -2164,6 +2184,7 @@ async function startUploadRecording() {
     });
 
     state.mediaRecorder.start();
+    state.isPreparingRecording = false;
     state.isRecording = true;
     void trackUsageEvent("recording_started", { mode: "upload" }, { refreshStats: true });
     const hasPreview = startBrowserInterimTranscript();
@@ -2187,7 +2208,9 @@ async function startUploadRecording() {
 async function startLiveRecording() {
   stopPlayback();
   resetLiveTranscriptState();
-  elements.transcriptText.textContent = "Connecting live transcript...";
+  if (!state.browserSpeechRecognition && !pickPreferredTranscript()) {
+    elements.transcriptText.textContent = "Connecting live transcript...";
+  }
   state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
   const peerConnection = new RTCPeerConnection();
@@ -2236,11 +2259,13 @@ async function startLiveRecording() {
   });
   await waitForDataChannelOpen(dataChannel);
 
+  state.isPreparingRecording = false;
   state.isRecording = true;
   void trackUsageEvent("recording_started", { mode: "live" }, { refreshStats: true });
   const hasPreview = startBrowserInterimTranscript();
   syncControlState();
   startLiveCommitLoop();
+  scheduleLiveBufferCommit(450);
   elements.transcriptText.textContent = hasPreview
     ? "Listening for your English..."
     : "Waiting for the live transcript...";
@@ -2253,7 +2278,18 @@ async function startLiveRecording() {
 }
 
 async function startRecording() {
+  state.isPreparingRecording = true;
+  syncControlState();
+  resetBrowserSpeechTranscript();
+  const previewStarted = startBrowserInterimTranscript();
+  if (previewStarted) {
+    elements.transcriptText.textContent = "Listening for your English...";
+    setStatus("Starting the microphone... you can begin speaking.", "neutral");
+  }
+
   if (!navigator.mediaDevices?.getUserMedia) {
+    state.isPreparingRecording = false;
+    syncControlState();
     setStatus("Microphone recording is not supported in this browser.", "danger");
     return;
   }
@@ -2267,6 +2303,8 @@ async function startRecording() {
       syncControlState();
       elements.transcriptText.textContent = "Live transcript could not connect. Transcript will appear after you stop recording.";
       setStatus(`${error.message} Falling back to standard recording.`, "warning");
+      state.isPreparingRecording = true;
+      syncControlState();
     }
   }
 
@@ -2347,12 +2385,6 @@ async function toggleRecording() {
   if (state.isRecording) {
     stopRecording();
     return;
-  }
-
-  resetBrowserSpeechTranscript();
-  const previewStarted = startBrowserInterimTranscript();
-  if (previewStarted) {
-    elements.transcriptText.textContent = "Listening for your English...";
   }
 
   await startRecording();

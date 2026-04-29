@@ -727,24 +727,9 @@ function getAdminDashboard() {
   const store = loadStore();
   pruneStore(store);
 
-  const usersById = new Map(store.users.map((entry) => [entry.id, entry]));
   const users = store.users
     .map((entry) => buildUserSnapshot(entry, { includeUsage: true, includeRawContact: true }))
     .sort(summarizeUserRanking);
-
-  const recentEvents = [...store.events]
-    .slice(-80)
-    .reverse()
-    .map((event) => {
-      const user = usersById.get(event.userId);
-      return {
-        id: event.id,
-        type: event.type,
-        timestamp: event.timestamp,
-        metadata: event.metadata && typeof event.metadata === "object" ? { ...event.metadata } : {},
-        user: user ? buildUserSnapshot(user, { includeRawContact: true }) : null
-      };
-    });
 
   const dashboard = {
     generatedAt: nowIso(),
@@ -760,8 +745,7 @@ function getAdminDashboard() {
       month: summarizeEvents(store.events, getStartOfMonth()),
       allTime: summarizeEvents(store.events)
     },
-    users,
-    recentEvents
+    users
   };
 
   saveStore(store);

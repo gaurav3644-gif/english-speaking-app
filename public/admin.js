@@ -18,7 +18,6 @@ const elements = {
   allTimeUsageValue: document.querySelector("#allTimeUsageValue"),
   allTimeUsageMeta: document.querySelector("#allTimeUsageMeta"),
   usersTableBody: document.querySelector("#adminUsersTableBody"),
-  eventsList: document.querySelector("#adminEventsList"),
   logoutButton: document.querySelector("#adminLogoutButton")
 };
 
@@ -81,25 +80,6 @@ function formatWindowSummary(valueElement, metaElement, summary) {
       `${pluralize(summary?.logins || 0, "login")} | ` +
       `${formatDurationCompact(summary?.activeSeconds || 0)}`;
   }
-}
-
-function formatEventType(type) {
-  return String(type || "")
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatMetadata(metadata) {
-  const entries = Object.entries(metadata || {}).filter(([, value]) => value !== "" && value != null);
-  if (!entries.length) {
-    return "No extra metadata";
-  }
-
-  return entries
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(" | ");
 }
 
 async function fetchJson(url, options = {}) {
@@ -180,38 +160,6 @@ function renderUsers(users = []) {
     .join("");
 }
 
-function renderEvents(events = []) {
-  if (!elements.eventsList) {
-    return;
-  }
-
-  if (!Array.isArray(events) || !events.length) {
-    elements.eventsList.innerHTML = '<p class="usage-leaderboard-empty">No events have been recorded yet.</p>';
-    return;
-  }
-
-  elements.eventsList.innerHTML = events
-    .map((event) => {
-      const user = event.user || null;
-      const userLabel = user?.name || user?.contact || user?.contactMasked || "Unknown user";
-      const userMeta = [user?.location, user?.contactMasked].filter(Boolean).join(" | ");
-      return `
-        <article class="admin-event">
-          <div class="admin-event-head">
-            <div class="admin-event-copy">
-              <strong>${escapeHtml(formatEventType(event.type))}</strong>
-              <span>${escapeHtml(userLabel)}</span>
-            </div>
-            <span class="admin-event-time">${escapeHtml(formatDateTime(event.timestamp))}</span>
-          </div>
-          <p class="admin-event-meta">${escapeHtml(userMeta || "No user metadata")}</p>
-          <p class="admin-event-meta">${escapeHtml(formatMetadata(event.metadata))}</p>
-        </article>
-      `;
-    })
-    .join("");
-}
-
 function renderDashboard(sessionPayload, dashboard) {
   if (elements.sessionMeta) {
     const user = sessionPayload?.user || {};
@@ -249,7 +197,6 @@ function renderDashboard(sessionPayload, dashboard) {
   formatWindowSummary(elements.allTimeUsageValue, elements.allTimeUsageMeta, dashboard?.overall?.allTime);
 
   renderUsers(dashboard?.users);
-  renderEvents(dashboard?.recentEvents);
 }
 
 async function logout() {
