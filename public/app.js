@@ -1,6 +1,7 @@
 const state = {
   isAuthenticated: false,
   isAuthBusy: false,
+  isAuthModalOpen: false,
   authMode: "guest",
   sessionUser: null,
   otpChallengeId: "",
@@ -41,6 +42,7 @@ const state = {
 const elements = {
   appShell: document.querySelector("#appShell"),
   authOverlay: document.querySelector("#authOverlay"),
+  closeAuthModalButton: document.querySelector("#closeAuthModalButton"),
   guestModeButton: document.querySelector("#guestModeButton"),
   otpModeButton: document.querySelector("#otpModeButton"),
   guestLoginForm: document.querySelector("#guestLoginForm"),
@@ -57,6 +59,8 @@ const elements = {
   otpHelperText: document.querySelector("#otpHelperText"),
   authStatusText: document.querySelector("#authStatusText"),
   sessionSummary: document.querySelector("#sessionSummary"),
+  headerLoginButton: document.querySelector("#headerLoginButton"),
+  heroPrimaryButton: document.querySelector("#heroPrimaryButton"),
   sessionUserName: document.querySelector("#sessionUserName"),
   sessionUserMeta: document.querySelector("#sessionUserMeta"),
   logoutButton: document.querySelector("#logoutButton"),
@@ -177,12 +181,55 @@ function formatDateTime(value) {
   }).format(parsedValue);
 }
 
-function setWorkspaceLocked(isLocked) {
-  document.body.classList.toggle("auth-locked", isLocked);
-  elements.appShell?.classList.toggle("is-locked", isLocked);
+function setAuthModalOpen(isOpen) {
+  state.isAuthModalOpen = Boolean(isOpen);
+  document.body.classList.toggle("auth-modal-open", state.isAuthModalOpen);
+  elements.appShell?.classList.toggle("is-auth-modal-open", state.isAuthModalOpen);
 
   if (elements.authOverlay) {
-    elements.authOverlay.hidden = !isLocked;
+    elements.authOverlay.hidden = !state.isAuthModalOpen;
+  }
+}
+
+function openAuthModal(mode = state.authMode) {
+  setAuthMode(mode);
+  setAuthModalOpen(true);
+}
+
+function closeAuthModal() {
+  if (state.isAuthBusy) {
+    return;
+  }
+
+  setAuthModalOpen(false);
+}
+
+function setPracticeVisibility(isVisible) {
+  if (elements.appShell) {
+    const practiceStudio = document.querySelector("#practiceStudio");
+    if (practiceStudio) {
+      practiceStudio.hidden = !isVisible;
+    }
+  }
+}
+
+function scrollToPracticeStudio() {
+  const practiceStudio = document.querySelector("#practiceStudio");
+  practiceStudio?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
+
+function updateAuthCtas() {
+  const signedIn = state.isAuthenticated;
+
+  if (elements.headerLoginButton) {
+    elements.headerLoginButton.hidden = signedIn;
+  }
+
+  if (elements.heroPrimaryButton) {
+    elements.heroPrimaryButton.textContent = signedIn ? "Open practice" : "Log in to start";
   }
 }
 
@@ -215,7 +262,8 @@ function setAuthBusy(isBusy) {
     elements.otpLocationInput,
     elements.requestOtpButton,
     elements.otpCodeInput,
-    elements.verifyOtpButton
+    elements.verifyOtpButton,
+    elements.closeAuthModalButton
   ];
 
   for (const control of authControls) {
@@ -445,16 +493,19 @@ function setAuthenticatedSession(sessionPayload) {
   state.sessionUser = isAuthenticated ? sessionPayload.user || null : null;
   state.otpChallengeId = "";
   updateSessionSummary();
+  updateAuthCtas();
 
   if (isAuthenticated) {
-    setWorkspaceLocked(false);
+    setPracticeVisibility(true);
+    closeAuthModal();
     setAuthStatus("");
     return;
   }
 
   resetUsageDashboard();
   resetSignedOutWorkspace();
-  setWorkspaceLocked(true);
+  setPracticeVisibility(false);
+  closeAuthModal();
 }
 
 function currentSentence() {
@@ -688,6 +739,7 @@ async function fetchJson(url, options = {}) {
       setAuthenticatedSession(null);
       setAuthStatus(payload.error || "Session expired. Sign in again.", "danger");
       setStatus(payload.error || "Session expired. Sign in again.", "warning");
+      openAuthModal("guest");
     }
     throw new Error(payload.error || "Sign in to continue.");
   }
@@ -726,6 +778,7 @@ async function trackUsageEvent(type, metadata = {}, options = {}) {
     setAuthenticatedSession(null);
     setAuthStatus("Session expired. Sign in again.", "danger");
     setStatus("Session expired. Sign in again.", "warning");
+    openAuthModal("guest");
     return;
   }
 
@@ -750,11 +803,15 @@ async function loadUsageDashboard() {
   }
 }
 
-async function handleAuthenticatedStart(sessionPayload, successMessage) {
+async function handleAuthenticatedStart(sessionPayload, successMessage, options = {}) {
+  const { scrollToPractice = false } = options;
   setAuthenticatedSession(sessionPayload);
   await loadUsageDashboard();
   setStatus(successMessage || "Signed in. Loading your lesson...", "success");
   await loadLesson();
+  if (scrollToPractice) {
+    scrollToPracticeStudio();
+  }
 }
 
 async function submitGuestLogin(event) {
@@ -781,7 +838,9 @@ async function submitGuestLogin(event) {
         location
       })
     });
-    await handleAuthenticatedStart(payload, "Guest session ready. Loading your first lesson...");
+    await handleAuthenticatedStart(payload, "Guest session ready. Loading your first lesson...", {
+      scrollToPractice: true
+    });
   } catch (error) {
     setAuthStatus(error.message, "danger");
   } finally {
@@ -862,7 +921,9 @@ async function verifyOtpLogin(event) {
         code
       })
     });
-    await handleAuthenticatedStart(payload, "OTP verified. Loading your first lesson...");
+    await handleAuthenticatedStart(payload, "OTP verified. Loading your first lesson...", {
+      scrollToPractice: true
+    });
   } catch (error) {
     setAuthStatus(error.message, "danger");
   } finally {
@@ -887,19 +948,23 @@ async function logoutCurrentUser() {
   setAuthMode("guest");
   setAuthStatus("Signed out. Sign in again to continue.", "success");
   setStatus("Sign in to continue.", "warning");
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
 }
 
 async function restoreSessionOrLockApp() {
-  setWorkspaceLocked(true);
+  setPracticeVisibility(false);
+  closeAuthModal();
   resetUsageDashboard();
-  setAuthStatus("Checking your existing session...");
+  updateAuthCtas();
+  setAuthStatus("");
 
   try {
     const payload = await fetchJson("/api/auth/session", { cache: "no-store" });
     if (!payload?.authenticated) {
       setAuthenticatedSession(null);
-      setAuthStatus("Sign in to unlock the practice studio.");
-      setStatus("Sign in to continue.", "warning");
       return;
     }
 
@@ -907,7 +972,6 @@ async function restoreSessionOrLockApp() {
   } catch (error) {
     setAuthenticatedSession(null);
     setAuthStatus(error.message, "danger");
-    setStatus("Sign in to continue.", "warning");
   }
 }
 
@@ -2282,6 +2346,35 @@ function handleTypedSubmit() {
 
 elements.playButton.addEventListener("click", () => {
   void playCurrentSentence({ preferImmediate: true });
+});
+
+elements.headerLoginButton?.addEventListener("click", () => {
+  openAuthModal("guest");
+});
+
+elements.heroPrimaryButton?.addEventListener("click", () => {
+  if (state.isAuthenticated) {
+    scrollToPracticeStudio();
+    return;
+  }
+
+  openAuthModal("guest");
+});
+
+elements.closeAuthModalButton?.addEventListener("click", () => {
+  closeAuthModal();
+});
+
+elements.authOverlay?.addEventListener("click", (event) => {
+  if (event.target === elements.authOverlay) {
+    closeAuthModal();
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.isAuthModalOpen) {
+    closeAuthModal();
+  }
 });
 
 elements.guestModeButton?.addEventListener("click", () => {

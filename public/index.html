@@ -15,10 +15,13 @@
   <body>
     <div class="app-shell" id="appShell">
       <div class="auth-overlay" id="authOverlay" hidden>
-        <div class="auth-panel">
-          <div class="auth-panel-copy">
-            <p class="section-kicker">Sign in</p>
-            <h2>Log in before you start practicing</h2>
+          <div class="auth-panel">
+            <button class="auth-close-button" id="closeAuthModalButton" type="button">
+              Close
+            </button>
+            <div class="auth-panel-copy">
+              <p class="section-kicker">Sign in</p>
+              <h2>Log in before you start practicing</h2>
             <p class="hero-text auth-intro-text">
               Use guest access with your name and location, or request a one-time OTP.
               After login, the full practice studio and usage tracking are unlocked.
@@ -145,6 +148,13 @@
                 <span class="hero-nav-pill">Live transcript</span>
                 <span class="hero-nav-pill">AI speaking coach</span>
               </div>
+              <button
+                class="button subtle header-login-button"
+                id="headerLoginButton"
+                type="button"
+              >
+                Log in
+              </button>
               <div class="session-summary" id="sessionSummary" hidden>
                 <div class="session-summary-copy">
                   <strong id="sessionUserName">Guest user</strong>
@@ -172,7 +182,9 @@
               </p>
 
               <div class="hero-actions">
-                <a class="button primary hero-button" href="#practiceStudio">Start Practice</a>
+                <button class="button primary hero-button" id="heroPrimaryButton" type="button">
+                  Log in to start
+                </button>
               </div>
 
               <div class="hero-cartoon" aria-hidden="true">
@@ -232,7 +244,7 @@
 
       </header>
 
-      <main class="workspace" id="practiceStudio">
+      <main class="workspace" id="practiceStudio" hidden>
         <section class="panel studio-panel">
           <div class="panel-header">
             <div>

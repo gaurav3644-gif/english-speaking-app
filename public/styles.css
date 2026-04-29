@@ -67,11 +67,11 @@ select {
   padding: 24px 0 56px;
 }
 
-body.auth-locked {
+body.auth-modal-open {
   overflow: hidden;
 }
 
-.app-shell.is-locked > :not(.auth-overlay) {
+.app-shell.is-auth-modal-open > :not(.auth-overlay) {
   filter: blur(8px);
   pointer-events: none;
   user-select: none;
@@ -91,6 +91,7 @@ body.auth-locked {
 }
 
 .auth-panel {
+  position: relative;
   width: min(100%, 760px);
   margin: auto 0;
   padding: 32px;
@@ -98,6 +99,20 @@ body.auth-locked {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.98);
   box-shadow: var(--shadow);
+}
+
+.auth-close-button {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .auth-panel-copy h2 {
@@ -259,6 +274,11 @@ body.auth-locked {
   display: grid;
   justify-items: end;
   gap: 12px;
+}
+
+.header-login-button {
+  min-height: 42px;
+  padding: 0 18px;
 }
 
 .brand {
@@ -1482,6 +1502,11 @@ body.auth-locked {
 
   .auth-panel {
     padding: 24px 20px;
+  }
+
+  .auth-close-button {
+    top: 14px;
+    right: 14px;
   }
 
   .auth-inline-grid,
