@@ -81,8 +81,10 @@ body.auth-locked {
   position: fixed;
   inset: 0;
   z-index: 40;
-  display: grid;
-  place-items: center;
+  overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   padding: 24px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px);
@@ -90,6 +92,7 @@ body.auth-locked {
 
 .auth-panel {
   width: min(100%, 760px);
+  margin: auto 0;
   padding: 32px;
   border-radius: 2rem;
   border: 1px solid var(--line);
