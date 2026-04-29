@@ -10,6 +10,10 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=DM+Serif+Display:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -252,210 +256,213 @@
 
       </header>
 
-      <main class="workspace" id="practiceStudio" hidden>
-        <section class="panel studio-panel">
-          <div class="panel-header">
-            <div>
-              <p class="section-kicker">Practice studio</p>
-              <h2 id="practiceTitle">Translate the Indonesian line into natural English</h2>
+      <main class="workspace practice-workspace" id="practiceStudio" hidden>
+        <section class="practice-main">
+          <p class="practice-hero-tag">Structured · Clear · Sharp</p>
+          <h2 class="practice-hero-title">
+            Practice spoken English in a <em>cleaner flow</em> built for daily repetition.
+          </h2>
+          <p class="practice-hero-sub">
+            Hear a local language sentence, answer in natural English, and get instant
+            AI feedback inside a simple white workspace with live transcript and clear pacing.
+          </p>
+
+          <div class="practice-stats-row">
+            <div class="practice-stat-item">
+              <div class="practice-stat-num">10</div>
+              <div class="practice-stat-lbl">Prompts per guided lesson</div>
             </div>
-            <div class="header-meta">
-              <label class="top-language-picker" for="sourceLanguageSelect">
-                <span>Source language</span>
-                <select class="difficulty-select top-language-select" id="sourceLanguageSelect">
-                  <option value="indonesian">Indonesian</option>
-                  <option value="hindi">Hindi</option>
-                </select>
-              </label>
-              <div class="header-meta-row">
-                <span class="meta-pill" id="progressLabel">Sentence 1 of 10</span>
-                <span class="meta-note" id="lessonMeta">Loading lesson...</span>
-              </div>
+            <div class="practice-stat-item">
+              <div class="practice-stat-num">4</div>
+              <div class="practice-stat-lbl">Difficulty bands from beginner to pro</div>
+            </div>
+            <div class="practice-stat-item">
+              <div class="practice-stat-num">Live</div>
+              <div class="practice-stat-lbl">Voice, transcript and AI review together</div>
             </div>
           </div>
 
-          <div class="sentence-focus" id="sentenceCard">
-            <div class="sentence-focus-copy">
-              <p class="sentence-label" id="sentenceLabel">Indonesian prompt</p>
-              <p class="sentence-text" id="sourceSentence">Loading...</p>
-              <p class="sentence-subtext" id="sentenceTag">Beginner</p>
+          <div class="practice-section-label">Practice studio</div>
+
+          <section class="practice-card">
+            <div class="practice-card-header">
+              <span class="practice-card-title" id="practiceTitle">
+                Translate the Indonesian line into natural English
+              </span>
+              <span class="practice-card-meta" id="lessonMeta">Loading lesson...</span>
             </div>
-            <button class="button subtle play-button" id="playButton" type="button">
-              Hear Indonesian
+
+            <div class="practice-card-body">
+              <div class="prompt-top" id="sentenceCard">
+                <div class="prompt-left">
+                  <div class="practice-prompt-tag">
+                    <span class="practice-prompt-dot"></span>
+                    <span id="sentenceLabel">Indonesian prompt</span>
+                  </div>
+                  <p class="practice-sentence" id="sourceSentence">Loading...</p>
+                  <p class="practice-context" id="sentenceTag">Beginner</p>
+                </div>
+
+                <div class="prompt-right">
+                  <label class="source-picker" for="sourceLanguageSelect">
+                    <span class="source-label">Source language</span>
+                    <select class="ctrl-select" id="sourceLanguageSelect">
+                      <option value="indonesian">Indonesian</option>
+                      <option value="hindi">Hindi</option>
+                    </select>
+                  </label>
+                  <div class="sentence-count" id="progressLabel">Sentence 1 of 10</div>
+                </div>
+              </div>
+
+              <button class="hear-btn" id="playButton" type="button">Hear Indonesian</button>
+
+              <div class="controls-row">
+                <article class="ctrl-card">
+                  <div class="ctrl-label">Lesson controls</div>
+                  <div class="ctrl-sublabel">Difficulty level</div>
+                  <select class="ctrl-select-full" id="difficultySelect">
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                    <option value="pro">Pro</option>
+                  </select>
+                  <div class="ctrl-btns">
+                    <button class="ctrl-btn" id="skipButton" type="button">Skip</button>
+                    <button class="ctrl-btn" id="newLessonButton" type="button">New lesson</button>
+                  </div>
+                </article>
+
+                <article class="ctrl-card ctrl-card-voice">
+                  <div class="ctrl-label">Voice answer</div>
+                  <p class="ctrl-desc">
+                    Use your microphone for live speaking practice. Press record, speak once in English, then stop.
+                  </p>
+                  <button class="record-btn" id="recordButton" type="button">Start Recording</button>
+                </article>
+
+                <article class="ctrl-card">
+                  <div class="ctrl-label">Typed fallback</div>
+                  <p class="ctrl-desc ctrl-desc-tight">Useful if microphone access is blocked.</p>
+                  <textarea
+                    id="typedAnswer"
+                    class="type-area"
+                    rows="4"
+                    placeholder="Type the English translation here..."
+                  ></textarea>
+                  <button class="submit-btn" id="submitTypedButton" type="button">
+                    Submit answer
+                  </button>
+                </article>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="practice-side">
+          <div class="practice-section-label">Session overview</div>
+
+          <div class="score-row">
+            <article class="score-card">
+              <div class="sc-label">Correct</div>
+              <div class="sc-num" id="correctCount">0</div>
+            </article>
+            <article class="score-card">
+              <div class="sc-label">Completed</div>
+              <div class="sc-num" id="completedCount">0</div>
+            </article>
+            <article class="score-card verdict">
+              <div>
+                <div class="sc-label">Verdict</div>
+                <div class="sc-verdict">Awaiting your first answer</div>
+              </div>
+              <div class="verdict-badge" id="verdictValue">Waiting</div>
+            </article>
+          </div>
+
+          <div class="insights-title">Usage insights</div>
+
+          <div class="user-meta" id="usageUserMeta">
+            Sign in to load your personal usage metrics.
+          </div>
+
+          <div class="metrics-grid">
+            <div class="m-card">
+              <div class="m-val" id="userLoginsMetric">0</div>
+              <div class="m-lbl">Logins</div>
+            </div>
+            <div class="m-card">
+              <div class="m-val" id="userLessonsMetric">0</div>
+              <div class="m-lbl">Lessons</div>
+            </div>
+            <div class="m-card">
+              <div class="m-val" id="userAttemptsMetric">0</div>
+              <div class="m-lbl">Attempts</div>
+            </div>
+            <div class="m-card">
+              <div class="m-val" id="userCorrectMetric">0</div>
+              <div class="m-lbl">Correct</div>
+            </div>
+          </div>
+
+          <div class="time-card">
+            <span class="time-lbl">Time spent</span>
+            <span class="time-val" id="userTimeMetric">0m</span>
+          </div>
+
+          <div class="period-grid">
+            <div class="period-card">
+              <div class="period-label">Today</div>
+              <div class="period-attempts" id="todayUsageValue">0 attempts</div>
+              <div class="period-sub" id="todayUsageMeta">0 lessons · 0 correct · 0m</div>
+            </div>
+            <div class="period-card">
+              <div class="period-label">This week</div>
+              <div class="period-attempts" id="weekUsageValue">0 attempts</div>
+              <div class="period-sub" id="weekUsageMeta">0 lessons · 0 correct · 0m</div>
+            </div>
+            <div class="period-card">
+              <div class="period-label">This month</div>
+              <div class="period-attempts" id="monthUsageValue">0 attempts</div>
+              <div class="period-sub" id="monthUsageMeta">0 lessons · 0 correct · 0m</div>
+            </div>
+            <div class="period-card">
+              <div class="period-label">All time</div>
+              <div class="period-attempts" id="allTimeUsageValue">0 attempts</div>
+              <div class="period-sub" id="allTimeUsageMeta">0 lessons · 0 correct · 0m</div>
+            </div>
+          </div>
+
+          <div class="status-box status-block" id="statusBox">
+            <div class="status-head">Status</div>
+            <div class="status-text" id="statusText">Loading your first practice sentence...</div>
+          </div>
+
+          <div class="info-block">
+            <div class="info-head">Transcript</div>
+            <div class="info-meta">What the app heard</div>
+            <div class="info-text" id="transcriptText">Your spoken or typed English will appear here.</div>
+          </div>
+
+          <div class="info-block">
+            <div class="info-head">AI feedback</div>
+            <div class="info-meta">Coach response</div>
+            <div class="info-text" id="feedbackText">The coach will tell you if the meaning is correct.</div>
+          </div>
+
+          <div class="info-block last">
+            <div class="info-head">Natural English version</div>
+            <div class="info-meta">Hidden until you choose to reveal it</div>
+            <div class="info-text is-concealed" id="idealAnswerText">
+              Submit your attempt first, then reveal the correct English answer only if you want to see it.
+            </div>
+            <button class="reveal-btn" id="revealIdealAnswerButton" type="button" disabled>
+              Reveal English answer
             </button>
           </div>
 
-          <div class="studio-grid">
-            <article class="workspace-card action-card">
-              <div class="workspace-card-head">
-                <p class="card-kicker">Lesson controls</p>
-                <span>Pick the challenge level</span>
-              </div>
-              <label class="difficulty-field" for="difficultySelect">
-                <span>Difficulty level</span>
-                <select class="difficulty-select" id="difficultySelect">
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
-                  <option value="pro">Pro</option>
-                </select>
-              </label>
-              <div class="control-row">
-                <button class="button secondary" id="skipButton" type="button">Skip</button>
-                <button class="button ghost" id="newLessonButton" type="button">
-                  New Lesson
-                </button>
-              </div>
-            </article>
-
-            <article class="workspace-card voice-card">
-              <div class="workspace-card-head">
-                <p class="card-kicker">Voice answer</p>
-                <span>Use your microphone for live speaking practice</span>
-              </div>
-              <p class="card-body-text">
-                Press record, speak once in English, and stop when you are done.
-              </p>
-              <button class="button primary record-button" id="recordButton" type="button">
-                Start Recording
-              </button>
-            </article>
-
-            <article class="workspace-card typed-card">
-              <div class="workspace-card-head">
-                <p class="card-kicker">Typed fallback</p>
-                <span>Useful if microphone access is blocked</span>
-              </div>
-              <label class="typed-label" for="typedAnswer">Type your English version</label>
-              <textarea
-                id="typedAnswer"
-                class="typed-answer"
-                rows="4"
-                placeholder="Type the English translation here"
-              ></textarea>
-              <button class="button secondary" id="submitTypedButton" type="button">
-                Submit Answer
-              </button>
-            </article>
-          </div>
-        </section>
-
-        <aside class="panel coach-panel">
-          <div class="score-grid">
-            <article class="score-card">
-              <p class="score-label">Correct</p>
-              <p class="score-value" id="correctCount">0</p>
-            </article>
-            <article class="score-card">
-              <p class="score-label">Completed</p>
-              <p class="score-value" id="completedCount">0</p>
-            </article>
-            <article class="score-card highlight">
-              <p class="score-label">Verdict</p>
-              <p class="score-value score-verdict" id="verdictValue">Waiting</p>
-            </article>
-          </div>
-
-          <article class="workspace-card usage-card">
-            <div class="workspace-card-head">
-              <p class="card-kicker">Usage insights</p>
-              <span>Your activity only</span>
-            </div>
-            <p class="usage-user-meta" id="usageUserMeta">
-              Sign in to load your personal usage metrics.
-            </p>
-            <div class="usage-metric-grid">
-              <article class="usage-metric">
-                <span>Logins</span>
-                <strong id="userLoginsMetric">0</strong>
-              </article>
-              <article class="usage-metric">
-                <span>Lessons</span>
-                <strong id="userLessonsMetric">0</strong>
-              </article>
-              <article class="usage-metric">
-                <span>Attempts</span>
-                <strong id="userAttemptsMetric">0</strong>
-              </article>
-              <article class="usage-metric">
-                <span>Correct</span>
-                <strong id="userCorrectMetric">0</strong>
-              </article>
-              <article class="usage-metric">
-                <span>Time spent</span>
-                <strong id="userTimeMetric">0m</strong>
-              </article>
-            </div>
-            <div class="usage-window-grid">
-              <article class="usage-window">
-                <p class="usage-window-title">Today</p>
-                <p class="usage-window-value" id="todayUsageValue">0 attempts</p>
-                <p class="usage-window-meta" id="todayUsageMeta">0 lessons | 0 correct | 0m</p>
-              </article>
-              <article class="usage-window">
-                <p class="usage-window-title">This week</p>
-                <p class="usage-window-value" id="weekUsageValue">0 attempts</p>
-                <p class="usage-window-meta" id="weekUsageMeta">0 lessons | 0 correct | 0m</p>
-              </article>
-              <article class="usage-window">
-                <p class="usage-window-title">This month</p>
-                <p class="usage-window-value" id="monthUsageValue">0 attempts</p>
-                <p class="usage-window-meta" id="monthUsageMeta">0 lessons | 0 correct | 0m</p>
-              </article>
-              <article class="usage-window">
-                <p class="usage-window-title">All time</p>
-                <p class="usage-window-value" id="allTimeUsageValue">0 attempts</p>
-                <p class="usage-window-meta" id="allTimeUsageMeta">0 lessons | 0 correct | 0m</p>
-              </article>
-            </div>
-          </article>
-
-          <div class="status-box" id="statusBox">
-            <p class="status-label">Status</p>
-            <p class="status-text" id="statusText">Loading your first practice sentence...</p>
-          </div>
-
-          <article class="workspace-card result-card">
-            <div class="workspace-card-head">
-              <p class="card-kicker">Transcript</p>
-              <span>What the app heard</span>
-            </div>
-            <p class="result-text" id="transcriptText">
-              Your spoken or typed English will appear here.
-            </p>
-          </article>
-
-          <article class="workspace-card result-card">
-            <div class="workspace-card-head">
-              <p class="card-kicker">AI feedback</p>
-              <span>Coach response</span>
-            </div>
-            <p class="result-text" id="feedbackText">
-              The coach will tell you if the meaning is correct.
-            </p>
-          </article>
-
-          <article class="workspace-card result-card ideal-card">
-            <div class="workspace-card-head">
-              <p class="card-kicker">Natural English version</p>
-              <span>Hidden until you choose to reveal it</span>
-              <button
-                class="button subtle reveal-answer-button"
-                id="revealIdealAnswerButton"
-                type="button"
-                disabled
-              >
-                Reveal English answer
-              </button>
-            </div>
-            <p class="result-text" id="idealAnswerText">
-              Submit your attempt first, then reveal the correct English answer only if you want to see it.
-            </p>
-          </article>
-
-          <p class="footnote" id="voiceDisclosure">
-            AI-generated voice is used for the source-language narration when the OpenAI
-            key is configured.
+          <p class="practice-voice-note" id="voiceDisclosure">
+            AI-generated voice is used for the source-language narration when the OpenAI key is configured.
           </p>
         </aside>
       </main>
