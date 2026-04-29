@@ -196,8 +196,10 @@ function openAuthModal(mode = state.authMode) {
   setAuthModalOpen(true);
 }
 
-function closeAuthModal() {
-  if (state.isAuthBusy) {
+function closeAuthModal(options = {}) {
+  const { force = false } = options;
+
+  if (state.isAuthBusy && !force) {
     return;
   }
 
@@ -497,7 +499,7 @@ function setAuthenticatedSession(sessionPayload) {
 
   if (isAuthenticated) {
     setPracticeVisibility(true);
-    closeAuthModal();
+    closeAuthModal({ force: true });
     setAuthStatus("");
     return;
   }
